@@ -68,7 +68,7 @@ fn main() {
     let filename = args.nth(1).unwrap();
 
     if let Err(err) = process_csv(&filename) {
-        println!("error running example: {}", err);
+        println!("error: {}", err);
         process::exit(1);
     }
 }
