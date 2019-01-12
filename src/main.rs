@@ -1,4 +1,3 @@
-#[macro_use]
 extern crate serde_derive;
 extern crate bincode;
 extern crate csv;
@@ -6,12 +5,10 @@ extern crate blake2;
 extern crate separator;
 extern crate byteorder;
 
-use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
 use std::error::Error;
-use std::io::prelude::*;
 use std::env;
 use std::process;
 use std::fs::File;
@@ -20,18 +17,7 @@ use std::path::Path;
 const VIOLATION_ID_INDEX: usize = 0;
 const ROW_REPORT_INTERVAL: usize = 100000;
 
-#[derive(Serialize, Deserialize, Debug)]
-enum LogRecord<K, V> {
-    Add(K, V),
-    Update(K, V),
-}
-
-enum Action {
-    Add,
-    Update
-}
-
-type ViolationLogRecord = LogRecord<u64, Vec<String>>;
+type ViolationMap = HashMap<u64, Vec<u8>>;
 
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
@@ -45,63 +31,27 @@ fn get_hash<'a, T: Iterator<Item = &'a str>>(iter: T) -> Vec<u8> {
     Vec::from(hasher.result().as_slice())
 }
 
-fn process_csv(filename: &str) -> Result<(), Box<Error>> {
-    let mut violation_map = HashMap::new();
-    let path = Path::new(filename);
-    let total_bytes = std::fs::metadata(path)?.len();
-    let file = File::open(path)?;
-    let logfile_path = Path::new("log.dat");
-    let mut logfile = std::fs::OpenOptions::new()
-        .read(true).write(true).create(true).open(logfile_path)?;
-    let total_logfile_bytes = std::fs::metadata(logfile_path)?.len();
-    let mut logfile_bytes_read = 0;
-    let mut records_read = 0;
-    println!("Processing logfile...");
-    loop {
-        match logfile.read_u16::<LittleEndian>() {
-            Ok(size) => {
-                let mut buf: Vec<u8> = Vec::with_capacity(size as usize);
-                let mut handle = &logfile;
-                handle.take(size as u64).read_to_end(&mut buf)?;
-                logfile_bytes_read += std::mem::size_of::<u16>() + buf.len();
-                let log_record = bincode::deserialize::<ViolationLogRecord>(&buf).unwrap();
-                match log_record {
-                    LogRecord::Add(violation_id, fields) => {
-                        let hash = get_hash(fields.iter().map(|field| field.as_str()));
-                        if violation_map.insert(violation_id, hash).is_some() {
-                            panic!("Cannot add pre-existing record!");
-                        }
-                    }
-                    LogRecord::Update(violation_id, fields) => {
-                        let hash = get_hash(fields.iter().map(|field| field.as_str()));
-                        if violation_map.insert(violation_id, hash).is_none() {
-                            panic!("Cannot update non-existent record!");
-                        }
-                    },
-                }
-                records_read += 1;
-                if records_read % ROW_REPORT_INTERVAL == 0 {
-                    let pct: u32 = ((logfile_bytes_read as f32 / total_logfile_bytes as f32) * 100.0) as u32;
-                    println!("Processed {}% of logfile.", pct);
-                }
-            },
-            Err(err) => {
-                if err.kind() == std::io::ErrorKind::UnexpectedEof {
-                    println!("Finished processing logfile.");
-                    break;
-                }
-                return Err(Box::new(err));
-            }
-        }
-    }
-    println!("Read {} existing records from logfile.", records_read);
-    let mut rdr = csv::Reader::from_reader(file);
+fn create_empty_logfile(path: &Path, headers: &csv::StringRecord) -> Result<(), Box<Error>> {
+    let logfile = File::create(path)?;
+    let mut writer = csv::Writer::from_writer(logfile);
+    writer.write_record(headers)?;
+    writer.flush()?;
+    Ok(())
+}
+
+fn process_csv(
+    rdr: &mut csv::Reader<File>,
+    path: &Path,
+    violation_map: &mut ViolationMap,
+    logfile: &mut Option<&mut csv::Writer<File>>
+) -> Result<(), Box<Error>> {
     validate_headers(rdr.headers()?);
+    let total_bytes = std::fs::metadata(path)?.len();
     let mut num_rows: usize = 0;
-    let mut record_iter = rdr.into_records();
+    let mut record_iter = rdr.records();
     let mut additions = 0;
     let mut updates = 0;
-    println!("Processing {}...", path.file_name().unwrap().to_str().unwrap());
+    println!("Processing {}...", path.display());
     loop {
         match record_iter.next() {
             Some(result) => {
@@ -110,34 +60,23 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let hash = get_hash(record.iter());
                 let hash_copy = hash.clone();
-                let opt_action: Option<Action> = match violation_map.insert(violation_id, hash) {
-                    Some(existing_hash) => if hash_copy != existing_hash {
-                        Some(Action::Update)
+                let is_changed = match violation_map.insert(violation_id, hash_copy) {
+                    Some(existing_hash) => if hash != existing_hash {
+                        updates += 1;
+                        true
                     } else {
-                        None
+                        false
                     },
-                    None => Some(Action::Add)
+                    None => {
+                        additions += 1;
+                        true
+                    }
                 };
                 num_rows += 1;
-                if let Some(action) = opt_action {
-                    let mut row: Vec<String> = Vec::with_capacity(record.len());
-                    for item in record.iter() {
-                        row.push(String::from(item));
+                if is_changed {
+                    if let Some(ref mut writer) = logfile {
+                        writer.write_record(&record)?;
                     }
-                    let log_record: ViolationLogRecord = match action {
-                        Action::Add => {
-                            additions += 1;
-                            LogRecord::Add(violation_id, row)
-                        },
-                        Action::Update => {
-                            updates += 1;
-                            LogRecord::Update(violation_id, row)
-                        }
-                    };
-                    // println!("Creating log entry {:?}.", log_record);
-                    let encoded = bincode::serialize(&log_record).unwrap();
-                    logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
-                    logfile.write(encoded.as_slice())?;
                 }
                 if num_rows % ROW_REPORT_INTERVAL == 0 {
                     let byte = record_iter.reader().position().byte();
@@ -148,9 +87,36 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
             None => break
         }
     }
-    println!("Finished processing {} records.", num_rows.separated_string());
-    println!("{} log additions created.", additions);
-    println!("{} log updates created.", updates);
+    if let Some(ref mut writer) = logfile {
+        writer.flush()?;
+    }
+    println!("Finished processing {} records with {} additions and {} updates.",
+             num_rows.separated_string(), additions.separated_string(), updates.separated_string());
+    Ok(())
+}
+
+fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), Box<Error>> {
+    let file = File::open(path)?;
+    let mut rdr = csv::Reader::from_reader(file);
+    process_csv(&mut rdr, path, violation_map, &mut None)?;
+    Ok(())
+}
+
+fn process_logfile_and_csv(log_filename: &str, filename: &str) -> Result<(), Box<Error>> {
+    let mut violation_map = HashMap::new();
+    let path = Path::new(filename);
+    let file = File::open(path)?;
+    let mut rdr = csv::Reader::from_reader(file);
+
+    let logfile_path = Path::new(log_filename);
+    if !logfile_path.exists() {
+        create_empty_logfile(logfile_path, rdr.headers()?)?;
+    }
+    process_logfile(logfile_path, &mut violation_map)?;
+    let logfile = std::fs::OpenOptions::new().write(true).append(true).open(logfile_path)?;
+    let mut logfile_writer = csv::Writer::from_writer(logfile);
+
+    process_csv(&mut rdr, path, &mut violation_map, &mut Some(&mut logfile_writer))?;
 
     Ok(())
 }
@@ -166,7 +132,7 @@ fn main() {
 
     let filename = args.nth(1).unwrap();
 
-    if let Err(err) = process_csv(&filename) {
+    if let Err(err) = process_logfile_and_csv("log.csv", &filename) {
         println!("error: {}", err);
         process::exit(1);
     }
