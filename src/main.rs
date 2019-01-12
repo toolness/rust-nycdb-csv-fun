@@ -6,7 +6,7 @@ extern crate blake2;
 extern crate separator;
 extern crate byteorder;
 
-use byteorder::{LittleEndian, WriteBytesExt};
+use byteorder::{LittleEndian, WriteBytesExt, ReadBytesExt};
 use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
@@ -27,6 +27,8 @@ enum LogRecord<K, V> {
     Remove(K),
 }
 
+type ViolationLogRecord = LogRecord<u64, Vec<String>>;
+
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
 }
@@ -38,7 +40,28 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     let file = File::open(path)?;
     let logfile_path = Path::new("log.dat");
     let mut logfile = std::fs::OpenOptions::new()
-        .write(true).truncate(true).create(true).open(logfile_path)?;
+        .read(true).write(true).create(true).open(logfile_path)?;
+    let mut records_read = 0;
+    loop {
+        match logfile.read_u16::<LittleEndian>() {
+            Ok(size) => {
+                let mut buf: Vec<u8> = Vec::with_capacity(size as usize);
+                let mut handle = &logfile;
+                handle.take(size as u64).read_to_end(&mut buf)?;
+                let log_record = bincode::deserialize::<ViolationLogRecord>(&buf).unwrap();
+                println!("{:?}", log_record);
+                records_read += 1;
+                // TODO: Actually modify violation_map based on the log record.
+            },
+            Err(err) => {
+                if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                    break;
+                }
+                return Err(Box::new(err));
+            }
+        }
+    }
+    println!("Read {} existing records from logfile.", records_read);
     let mut rdr = csv::Reader::from_reader(file);
     validate_headers(rdr.headers()?);
     let mut num_rows: usize = 0;
@@ -50,16 +73,16 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let mut hasher = Blake2s::new();
-                let mut row = Vec::with_capacity(record.len());
+                let mut row: Vec<String> = Vec::with_capacity(record.len());
                 for item in record.iter() {
                     hasher.input(item);
-                    row.push(item);
+                    row.push(String::from(item));
                 }
                 let hash: Vec<u8> = Vec::from(hasher.result().as_slice());
                 if violation_map.insert(violation_id, hash).is_some() {
                     panic!("Multiple entries for violation id {} found!", violation_id);
                 }
-                let log_record = LogRecord::Add(violation_id, row);
+                let log_record: ViolationLogRecord = LogRecord::Add(violation_id, row);
                 let encoded = bincode::serialize(&log_record).unwrap();
                 logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
                 logfile.write(encoded.as_slice())?;
