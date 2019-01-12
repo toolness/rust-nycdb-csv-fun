@@ -1,8 +1,12 @@
+#[macro_use]
+extern crate serde_derive;
 extern crate bincode;
 extern crate csv;
 extern crate blake2;
 extern crate separator;
+extern crate byteorder;
 
+use byteorder::{LittleEndian, WriteBytesExt};
 use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
@@ -16,6 +20,13 @@ use std::path::Path;
 const VIOLATION_ID_INDEX: usize = 0;
 const ROW_REPORT_INTERVAL: usize = 100000;
 
+#[derive(Serialize, Deserialize, Debug)]
+enum LogRecord<K, V> {
+    Add(K, V),
+    Update(K, V),
+    Remove(K),
+}
+
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
 }
@@ -25,6 +36,9 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     let path = Path::new(filename);
     let total_bytes = std::fs::metadata(path)?.len();
     let file = File::open(path)?;
+    let logfile_path = Path::new("log.dat");
+    let mut logfile = std::fs::OpenOptions::new()
+        .write(true).truncate(true).create(true).open(logfile_path)?;
     let mut rdr = csv::Reader::from_reader(file);
     validate_headers(rdr.headers()?);
     let mut num_rows: usize = 0;
@@ -36,13 +50,19 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let mut hasher = Blake2s::new();
+                let mut row = Vec::with_capacity(record.len());
                 for item in record.iter() {
                     hasher.input(item);
+                    row.push(item);
                 }
                 let hash: Vec<u8> = Vec::from(hasher.result().as_slice());
                 if violation_map.insert(violation_id, hash).is_some() {
                     panic!("Multiple entries for violation id {} found!", violation_id);
                 }
+                let log_record = LogRecord::Add(violation_id, row);
+                let encoded = bincode::serialize(&log_record).unwrap();
+                logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
+                logfile.write(encoded.as_slice())?;
                 num_rows += 1;
                 if num_rows % ROW_REPORT_INTERVAL == 0 {
                     let byte = record_iter.reader().position().byte();
@@ -54,17 +74,6 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
         }
     }
     println!("Finished processing {} records.", num_rows.separated_string());
-
-    // TODO: This isn't great because we're effectively holding two copies of the
-    // map in memory, and the map can be quite large. I tried using bincode::serialize_into()
-    // instead, but it hung on large hashmaps.
-    println!("Serializing violation map...");
-    let encoded_map: Vec<u8> = bincode::serialize(&violation_map).unwrap();
-    println!("Memory used by violation map: {} bytes", encoded_map.len().separated_string());
-    println!("Writing violation map to disk...");
-    let mut map_file = File::create("map.dat").unwrap();
-    map_file.write(&encoded_map)?;
-    println!("Done.");
 
     Ok(())
 }

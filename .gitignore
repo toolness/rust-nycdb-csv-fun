@@ -1,4 +1,4 @@
 /target
 **/*.rs.bk
 hpd_violations-*.csv
-map.dat
+log.dat
