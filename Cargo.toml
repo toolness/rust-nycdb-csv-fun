@@ -1,0 +1,8 @@
+[package]
+name = "rust-csv-fun"
+version = "0.1.0"
+authors = ["Atul Varma <varmaa@gmail.com>"]
+
+[dependencies]
+csv = "1"
+blake2 = "0.8"
