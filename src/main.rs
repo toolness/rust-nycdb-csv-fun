@@ -19,6 +19,20 @@ fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
 }
 
+/**
+ * Return the size of all the HashMap's items. It will not include the size of
+ * the HashMap's metadata and such.
+ * 
+ * If the HashMap is empty, returns None.
+ */
+fn get_hashmap_contents_size<K: Eq + std::hash::Hash, V>(hashmap: &HashMap<K, V>) -> Option<usize> {
+    let size = hashmap.len();
+    for (key, val) in hashmap.iter() {
+        return Some((mem::size_of_val(key) + mem::size_of_val(val)) * size);
+    }
+    None
+}
+
 fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     let mut violation_map = HashMap::new();
     let path = Path::new(filename);
@@ -53,8 +67,9 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
         }
     }
     println!("Finished processing {} records.", num_rows.separated_string());
-    let total_mem = mem::size_of_val(&violation_map) * num_rows;
-    println!("Memory used by violation map: {} bytes", total_mem.separated_string());
+    if let Some(total_mem) = get_hashmap_contents_size(&violation_map) {
+        println!("Memory used by violation map: {} bytes", total_mem.separated_string());
+    }
     Ok(())
 }
 
