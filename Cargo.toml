@@ -6,3 +6,4 @@ authors = ["Atul Varma <varmaa@gmail.com>"]
 [dependencies]
 csv = "1"
 blake2 = "0.8"
+separator = "0.3.1"

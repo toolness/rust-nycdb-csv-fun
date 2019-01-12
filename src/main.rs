@@ -1,6 +1,8 @@
 extern crate csv;
 extern crate blake2;
+extern crate separator;
 
+use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
 use std::error::Error;
@@ -50,9 +52,9 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
             None => break
         }
     }
-    println!("Finished processing {} records.", num_rows);
-    println!("Approximate memory used by violation_map: {} bytes",
-             mem::size_of_val(&violation_map) * num_rows);
+    println!("Finished processing {} records.", num_rows.separated_string());
+    let total_mem = mem::size_of_val(&violation_map) * num_rows;
+    println!("Memory used by violation map: {} bytes", total_mem.separated_string());
     Ok(())
 }
 
