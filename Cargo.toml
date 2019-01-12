@@ -1,5 +1,5 @@
 [package]
-name = "rust-csv-fun"
+name = "rust-nycdb-csv-fun"
 version = "0.1.0"
 authors = ["Atul Varma <varmaa@gmail.com>"]
 
