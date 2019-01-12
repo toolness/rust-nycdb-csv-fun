@@ -33,6 +33,14 @@ fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
 }
 
+fn get_hash<'a, T: Iterator<Item = &'a str>>(iter: T) -> Vec<u8> {
+    let mut hasher = Blake2s::new();
+    for item in iter {
+        hasher.input(item);
+    }
+    Vec::from(hasher.result().as_slice())
+}
+
 fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     let mut violation_map = HashMap::new();
     let path = Path::new(filename);
@@ -49,7 +57,14 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let mut handle = &logfile;
                 handle.take(size as u64).read_to_end(&mut buf)?;
                 let log_record = bincode::deserialize::<ViolationLogRecord>(&buf).unwrap();
-                println!("{:?}", log_record);
+                match log_record {
+                    LogRecord::Add(violation_id, fields) => {
+                        println!("{:?}", fields);
+                        let hash = get_hash(fields.iter().map(|field| field.as_str()));
+                    }
+                    LogRecord::Update(violation_id, fields) => {},
+                    LogRecord::Remove(violation_id) => {}
+                }
                 records_read += 1;
                 // TODO: Actually modify violation_map based on the log record.
             },
@@ -72,11 +87,7 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let record = result?;
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
-                let mut hasher = Blake2s::new();
-                for item in record.iter() {
-                    hasher.input(item);
-                }
-                let hash: Vec<u8> = Vec::from(hasher.result().as_slice());
+                let hash = get_hash(record.iter());
                 if violation_map.insert(violation_id, hash).is_some() {
                     panic!("Multiple entries for violation id {} found!", violation_id);
                 }
