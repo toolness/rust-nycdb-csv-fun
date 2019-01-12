@@ -24,7 +24,11 @@ const ROW_REPORT_INTERVAL: usize = 100000;
 enum LogRecord<K, V> {
     Add(K, V),
     Update(K, V),
-    Remove(K),
+}
+
+enum Action {
+    Add,
+    Update
 }
 
 type ViolationLogRecord = LogRecord<u64, Vec<String>>;
@@ -59,14 +63,19 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let log_record = bincode::deserialize::<ViolationLogRecord>(&buf).unwrap();
                 match log_record {
                     LogRecord::Add(violation_id, fields) => {
-                        println!("{:?}", fields);
                         let hash = get_hash(fields.iter().map(|field| field.as_str()));
+                        if violation_map.insert(violation_id, hash).is_some() {
+                            panic!("Cannot add pre-existing record!");
+                        }
                     }
-                    LogRecord::Update(violation_id, fields) => {},
-                    LogRecord::Remove(violation_id) => {}
+                    LogRecord::Update(violation_id, fields) => {
+                        let hash = get_hash(fields.iter().map(|field| field.as_str()));
+                        if violation_map.insert(violation_id, hash).is_none() {
+                            panic!("Cannot update non-existent record!");
+                        }
+                    },
                 }
                 records_read += 1;
-                // TODO: Actually modify violation_map based on the log record.
             },
             Err(err) => {
                 if err.kind() == std::io::ErrorKind::UnexpectedEof {
@@ -88,18 +97,30 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let hash = get_hash(record.iter());
-                if violation_map.insert(violation_id, hash).is_some() {
-                    panic!("Multiple entries for violation id {} found!", violation_id);
-                }
-                let mut row: Vec<String> = Vec::with_capacity(record.len());
-                for item in record.iter() {
-                    row.push(String::from(item));
-                }
-                let log_record: ViolationLogRecord = LogRecord::Add(violation_id, row);
-                let encoded = bincode::serialize(&log_record).unwrap();
-                logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
-                logfile.write(encoded.as_slice())?;
+                let hash_copy = hash.clone();
+                let opt_action: Option<Action> = match violation_map.insert(violation_id, hash) {
+                    Some(existing_hash) => if hash_copy != existing_hash {
+                        Some(Action::Update)
+                    } else {
+                        None
+                    },
+                    None => Some(Action::Add)
+                };
                 num_rows += 1;
+                if let Some(action) = opt_action {
+                    let mut row: Vec<String> = Vec::with_capacity(record.len());
+                    for item in record.iter() {
+                        row.push(String::from(item));
+                    }
+                    let log_record: ViolationLogRecord = match action {
+                        Action::Add => LogRecord::Add(violation_id, row),
+                        Action::Update => LogRecord::Update(violation_id, row)
+                    };
+                    println!("Creating log entry {:?}.", log_record);
+                    let encoded = bincode::serialize(&log_record).unwrap();
+                    logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
+                    logfile.write(encoded.as_slice())?;
+                }
                 if num_rows % ROW_REPORT_INTERVAL == 0 {
                     let byte = record_iter.reader().position().byte();
                     let pct: u32 = ((byte as f32 / total_bytes as f32) * 100.0) as u32;
