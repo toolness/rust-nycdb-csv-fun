@@ -1,3 +1,4 @@
+extern crate bincode;
 extern crate csv;
 extern crate blake2;
 extern crate separator;
@@ -6,7 +7,7 @@ use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
 use std::error::Error;
-use std::mem;
+use std::io::prelude::*;
 use std::env;
 use std::process;
 use std::fs::File;
@@ -17,20 +18,6 @@ const ROW_REPORT_INTERVAL: usize = 100000;
 
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
-}
-
-/**
- * Return the size of all the HashMap's items. It will not include the size of
- * the HashMap's metadata and such.
- * 
- * If the HashMap is empty, returns None.
- */
-fn get_hashmap_contents_size<K: Eq + std::hash::Hash, V>(hashmap: &HashMap<K, V>) -> Option<usize> {
-    let size = hashmap.len();
-    for (key, val) in hashmap.iter() {
-        return Some((mem::size_of_val(key) + mem::size_of_val(val)) * size);
-    }
-    None
 }
 
 fn process_csv(filename: &str) -> Result<(), Box<Error>> {
@@ -52,7 +39,7 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 for item in record.iter() {
                     hasher.input(item);
                 }
-                let hash = hasher.result();
+                let hash: Vec<u8> = Vec::from(hasher.result().as_slice());
                 if violation_map.insert(violation_id, hash).is_some() {
                     panic!("Multiple entries for violation id {} found!", violation_id);
                 }
@@ -67,9 +54,18 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
         }
     }
     println!("Finished processing {} records.", num_rows.separated_string());
-    if let Some(total_mem) = get_hashmap_contents_size(&violation_map) {
-        println!("Memory used by violation map: {} bytes", total_mem.separated_string());
-    }
+
+    // TODO: This isn't great because we're effectively holding two copies of the
+    // map in memory, and the map can be quite large. I tried using bincode::serialize_into()
+    // instead, but it hung on large hashmaps.
+    println!("Serializing violation map...");
+    let encoded_map: Vec<u8> = bincode::serialize(&violation_map).unwrap();
+    println!("Memory used by violation map: {} bytes", encoded_map.len().separated_string());
+    println!("Writing violation map to disk...");
+    let mut map_file = File::create("map.dat").unwrap();
+    map_file.write(&encoded_map)?;
+    println!("Done.");
+
     Ok(())
 }
 
