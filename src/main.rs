@@ -53,13 +53,17 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     let logfile_path = Path::new("log.dat");
     let mut logfile = std::fs::OpenOptions::new()
         .read(true).write(true).create(true).open(logfile_path)?;
+    let total_logfile_bytes = std::fs::metadata(logfile_path)?.len();
+    let mut logfile_bytes_read = 0;
     let mut records_read = 0;
+    println!("Processing logfile...");
     loop {
         match logfile.read_u16::<LittleEndian>() {
             Ok(size) => {
                 let mut buf: Vec<u8> = Vec::with_capacity(size as usize);
                 let mut handle = &logfile;
                 handle.take(size as u64).read_to_end(&mut buf)?;
+                logfile_bytes_read += std::mem::size_of::<u16>() + buf.len();
                 let log_record = bincode::deserialize::<ViolationLogRecord>(&buf).unwrap();
                 match log_record {
                     LogRecord::Add(violation_id, fields) => {
@@ -76,9 +80,14 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                     },
                 }
                 records_read += 1;
+                if records_read % ROW_REPORT_INTERVAL == 0 {
+                    let pct: u32 = ((logfile_bytes_read as f32 / total_logfile_bytes as f32) * 100.0) as u32;
+                    println!("Processed {}% of logfile.", pct);
+                }
             },
             Err(err) => {
                 if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                    println!("Finished processing logfile.");
                     break;
                 }
                 return Err(Box::new(err));
@@ -90,6 +99,9 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
     validate_headers(rdr.headers()?);
     let mut num_rows: usize = 0;
     let mut record_iter = rdr.into_records();
+    let mut additions = 0;
+    let mut updates = 0;
+    println!("Processing {}...", path.file_name().unwrap().to_str().unwrap());
     loop {
         match record_iter.next() {
             Some(result) => {
@@ -113,10 +125,16 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                         row.push(String::from(item));
                     }
                     let log_record: ViolationLogRecord = match action {
-                        Action::Add => LogRecord::Add(violation_id, row),
-                        Action::Update => LogRecord::Update(violation_id, row)
+                        Action::Add => {
+                            additions += 1;
+                            LogRecord::Add(violation_id, row)
+                        },
+                        Action::Update => {
+                            updates += 1;
+                            LogRecord::Update(violation_id, row)
+                        }
                     };
-                    println!("Creating log entry {:?}.", log_record);
+                    // println!("Creating log entry {:?}.", log_record);
                     let encoded = bincode::serialize(&log_record).unwrap();
                     logfile.write_u16::<LittleEndian>(encoded.len() as u16).unwrap();
                     logfile.write(encoded.as_slice())?;
@@ -131,6 +149,8 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
         }
     }
     println!("Finished processing {} records.", num_rows.separated_string());
+    println!("{} log additions created.", additions);
+    println!("{} log updates created.", updates);
 
     Ok(())
 }
