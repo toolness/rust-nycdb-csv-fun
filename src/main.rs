@@ -73,14 +73,16 @@ fn process_csv(filename: &str) -> Result<(), Box<Error>> {
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let mut hasher = Blake2s::new();
-                let mut row: Vec<String> = Vec::with_capacity(record.len());
                 for item in record.iter() {
                     hasher.input(item);
-                    row.push(String::from(item));
                 }
                 let hash: Vec<u8> = Vec::from(hasher.result().as_slice());
                 if violation_map.insert(violation_id, hash).is_some() {
                     panic!("Multiple entries for violation id {} found!", violation_id);
+                }
+                let mut row: Vec<String> = Vec::with_capacity(record.len());
+                for item in record.iter() {
+                    row.push(String::from(item));
                 }
                 let log_record: ViolationLogRecord = LogRecord::Add(violation_id, row);
                 let encoded = bincode::serialize(&log_record).unwrap();
