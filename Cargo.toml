@@ -1,5 +1,5 @@
 [package]
-name = "rust-nycdb-csv-fun"
+name = "nycsv"
 version = "0.1.0"
 authors = ["Atul Varma <varmaa@gmail.com>"]
 
@@ -11,3 +11,4 @@ byteorder = "1.2.7"
 pbr = "1"
 serde = "1"
 serde_derive = "1"
+docopt = "1"

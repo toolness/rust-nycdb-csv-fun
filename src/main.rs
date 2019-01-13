@@ -4,6 +4,7 @@ extern crate csv;
 extern crate blake2;
 extern crate separator;
 extern crate byteorder;
+extern crate docopt;
 
 #[macro_use]
 extern crate serde_derive;
@@ -13,14 +14,30 @@ pub mod pk_map;
 use separator::Separatable;
 use pbr::{ProgressBar, Units};
 use std::error::Error;
-use std::env;
 use std::process;
 use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
 use pk_map::PkHashMap;
 
+const USAGE: &'static str = "
+Proof-of-concept CSV experiment for NYC-DB.
+
+Usage:
+  nycsv process <filename>
+
+Options:
+  -h, --help    Show this screen.
+";
+
 const PRIMARY_KEY_INDEX: usize = 0;
+
 const ROW_REPORT_INTERVAL: usize = 100000;
+
+#[derive(Deserialize)]
+struct Args {
+    arg_filename: Option<String>,
+    cmd_process: bool
+}
 
 #[derive(Serialize, Deserialize)]
 struct Revision {
@@ -188,18 +205,16 @@ fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Res
 }
 
 fn main() {
-    let mut args = env::args();
+    let args: Args = docopt::Docopt::new(USAGE)
+        .and_then(|d| d.deserialize())
+        .unwrap_or_else(|e| e.exit());
 
-    if args.len() < 2 {
-        let executable = args.nth(0).unwrap();
-        println!("usage: {} <csv-file>", executable);
-        process::exit(1);
-    }
+    if args.cmd_process {
+        let filename = args.arg_filename.unwrap();
 
-    let filename = args.nth(1).unwrap();
-
-    if let Err(err) = process_logfile_and_csv("log", &filename) {
-        println!("error: {}", err);
-        process::exit(1);
+        if let Err(err) = process_logfile_and_csv("log", &filename) {
+            println!("error: {}", err);
+            process::exit(1);
+        }
     }
 }
