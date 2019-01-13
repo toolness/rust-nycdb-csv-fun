@@ -60,9 +60,8 @@ fn process_csv(
                 let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
                 let violation_id: u64 = violation_id_str.parse().unwrap();
                 let hash = get_hash(record.iter());
-                let hash_copy = hash.clone();
-                let is_changed = match violation_map.insert(violation_id, hash_copy) {
-                    Some(existing_hash) => if hash != existing_hash {
+                let is_changed = match violation_map.insert(violation_id, hash) {
+                    Some(existing_hash) => if violation_map.get(&violation_id).unwrap() != &existing_hash {
                         updates += 1;
                         true
                     } else {
