@@ -43,7 +43,7 @@ fn process_csv(
     rdr: &mut csv::Reader<File>,
     path: &Path,
     violation_map: &mut ViolationMap,
-    logfile: &mut Option<&mut csv::Writer<File>>
+    logfile: Option<&mut csv::Writer<File>>
 ) -> Result<(), Box<Error>> {
     validate_headers(rdr.headers()?);
     let total_bytes = std::fs::metadata(path)?.len();
@@ -51,6 +51,7 @@ fn process_csv(
     let mut record_iter = rdr.records();
     let mut additions = 0;
     let mut updates = 0;
+    let mut my_logfile = logfile;
     println!("Processing {}...", path.display());
     loop {
         match record_iter.next() {
@@ -74,7 +75,7 @@ fn process_csv(
                 };
                 num_rows += 1;
                 if is_changed {
-                    if let Some(ref mut writer) = logfile {
+                    if let Some(ref mut writer) = my_logfile {
                         writer.write_record(&record)?;
                     }
                 }
@@ -87,7 +88,7 @@ fn process_csv(
             None => break
         }
     }
-    if let Some(ref mut writer) = logfile {
+    if let Some(ref mut writer) = my_logfile {
         writer.flush()?;
     }
     println!("Finished processing {} records with {} additions and {} updates.",
@@ -98,7 +99,7 @@ fn process_csv(
 fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), Box<Error>> {
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
-    process_csv(&mut rdr, path, violation_map, &mut None)?;
+    process_csv(&mut rdr, path, violation_map, None)?;
     Ok(())
 }
 
@@ -116,7 +117,7 @@ fn process_logfile_and_csv(log_filename: &str, filename: &str) -> Result<(), Box
     let logfile = std::fs::OpenOptions::new().write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
 
-    process_csv(&mut rdr, path, &mut violation_map, &mut Some(&mut logfile_writer))?;
+    process_csv(&mut rdr, path, &mut violation_map, Some(&mut logfile_writer))?;
 
     Ok(())
 }
