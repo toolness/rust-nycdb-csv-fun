@@ -192,7 +192,7 @@ fn main() {
 
     let filename = args.nth(1).unwrap();
 
-    if let Err(err) = process_logfile_and_csv("log.csv", &filename, "log.violation_map.dat") {
+    if let Err(err) = process_logfile_and_csv("log.csv", &filename, "log.cache.dat") {
         println!("error: {}", err);
         process::exit(1);
     }
