@@ -110,7 +110,8 @@ fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), 
 }
 
 fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
-    let mut file = File::open(path)?;
+    let rawfile = File::open(path)?;
+    let mut file = std::io::BufReader::new(rawfile);
     let u64_size = 8;
     let hash_size = get_hash_size();
     let entry_size = (u64_size + hash_size) as u64;
@@ -119,9 +120,8 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
     println!("Reading {} entries from {}...", total_entries, path.display());
     for _ in 0..total_entries {
         let number = file.read_u64::<LittleEndian>()?;
-        let mut hash = Vec::with_capacity(hash_size);
-        let mut handle = &file;
-        handle.take(hash_size as u64).read_to_end(&mut hash)?;
+        let mut hash = vec![0; hash_size];
+        file.read_exact(&mut hash)?;
         map.insert(number, hash);
         entries += 1;
         if entries % ROW_REPORT_INTERVAL == 0 {
@@ -134,7 +134,8 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
 }
 
 fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
-    let mut file = File::create(path)?;
+    let rawfile = File::create(path)?;
+    let mut file = std::io::BufWriter::new(rawfile);
     let mut entries = 0;
     let total_entries = map.len();
     println!("Writing {} entries to {}...", total_entries, path.display());
