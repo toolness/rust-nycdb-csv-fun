@@ -137,6 +137,8 @@ fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Er
     let total_entries = map.len();
     println!("Writing {} entries to {}...", total_entries.separated_string(), path.display());
     let mut pb = ProgressBar::new(total_entries as u64);
+    pb.show_counter = false;
+    pb.show_speed = false;
     for (key, value) in map.iter() {
         file.write_u64::<LittleEndian>(*key)?;
         file.write(value)?;
