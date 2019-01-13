@@ -103,8 +103,14 @@ fn process_csv<F>(
         }
     }
     pb.finish_println("");
-    println!("Finished processing {} records with {} additions and {} updates.",
-             num_rows.separated_string(), additions.separated_string(), updates.separated_string());
+    if num_rows > 0 {
+        println!(
+            "Finished processing {} records with {} additions and {} updates.",
+            num_rows.separated_string(),
+            additions.separated_string(),
+            updates.separated_string()
+        );
+    }
     Ok(())
 }
 
@@ -123,7 +129,7 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
     let entry_size = (u64_size + hash_size) as u64;
     let mut entries = 0;
     let total_entries = std::fs::metadata(path)?.len() / entry_size;
-    println!("Reading {} entries from {}...", total_entries.separated_string(), path.display());
+    println!("Loading log cache with {} entries...", total_entries.separated_string());
     let mut pb = ProgressBar::new(total_entries);
     pb.show_counter = false;
     pb.show_speed = false;
@@ -146,7 +152,7 @@ fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Er
     let mut file = std::io::BufWriter::new(rawfile);
     let mut entries = 0;
     let total_entries = map.len();
-    println!("Writing {} entries to {}...", total_entries.separated_string(), path.display());
+    println!("Saving log cache with {} entries...", total_entries.separated_string());
     let mut pb = ProgressBar::new(total_entries as u64);
     pb.show_counter = false;
     pb.show_speed = false;
@@ -197,8 +203,8 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     if rows > 0 {
         let logfile_index_path = Path::new(&log_index_filename);
         logfile_writer.flush()?;
-        write_violation_map(&mut violation_map, vmap_path)?;
         let id = write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
+        write_violation_map(&mut violation_map, vmap_path)?;
         println!("Wrote revision {}.", id);
     } else {
         println!("No changes found.");
