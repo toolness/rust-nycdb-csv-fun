@@ -1,5 +1,3 @@
-extern crate serde_derive;
-extern crate bincode;
 extern crate csv;
 extern crate blake2;
 extern crate separator;

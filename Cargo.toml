@@ -7,7 +7,4 @@ authors = ["Atul Varma <varmaa@gmail.com>"]
 csv = "1"
 blake2 = "0.8"
 separator = "0.3.1"
-serde = "1"
-serde_derive =  "1"
-bincode = "1"
 byteorder = "1.2.7"
