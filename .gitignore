@@ -2,3 +2,4 @@
 **/*.rs.bk
 hpd_violations-*.csv
 log.csv
+log.violation_map.dat

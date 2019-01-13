@@ -5,10 +5,12 @@ extern crate blake2;
 extern crate separator;
 extern crate byteorder;
 
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use separator::Separatable;
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
 use std::error::Error;
+use std::io::prelude::*;
 use std::env;
 use std::process;
 use std::fs::File;
@@ -21,6 +23,11 @@ type ViolationMap = HashMap<u64, Vec<u8>>;
 
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
+}
+
+fn get_hash_size() -> usize {
+    let hasher = Blake2s::new();
+    hasher.result().len()
 }
 
 fn get_hash<'a, T: Iterator<Item = &'a str>>(iter: T) -> Vec<u8> {
@@ -102,7 +109,51 @@ fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), 
     Ok(())
 }
 
-fn process_logfile_and_csv(log_filename: &str, filename: &str) -> Result<(), Box<Error>> {
+fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
+    let mut file = File::open(path)?;
+    let u64_size = 8;
+    let hash_size = get_hash_size();
+    let entry_size = (u64_size + hash_size) as u64;
+    let mut entries = 0;
+    let total_entries = std::fs::metadata(path)?.len() / entry_size;
+    println!("Reading {} entries from {}...", total_entries, path.display());
+    for _ in 0..total_entries {
+        let number = file.read_u64::<LittleEndian>()?;
+        let mut hash = Vec::with_capacity(hash_size);
+        let mut handle = &file;
+        handle.take(hash_size as u64).read_to_end(&mut hash)?;
+        map.insert(number, hash);
+        entries += 1;
+        if entries % ROW_REPORT_INTERVAL == 0 {
+            let pct = ((entries as f32 / total_entries as f32) * 100.0) as u32;
+            println!("{}% complete.", pct);
+        }
+    }
+    println!("Done.");
+    Ok(())
+}
+
+fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
+    let mut file = File::create(path)?;
+    let mut entries = 0;
+    let total_entries = map.len();
+    println!("Writing {} entries to {}...", total_entries, path.display());
+    for (key, value) in map.iter() {
+        file.write_u64::<LittleEndian>(*key)?;
+        file.write(value)?;
+        entries += 1;
+        if entries % ROW_REPORT_INTERVAL == 0 {
+            let pct = ((entries as f32 / total_entries as f32) * 100.0) as u32;
+            println!("{}% complete.", pct);
+        }
+    }
+    file.flush()?;
+    println!("Done.");
+    Ok(())
+}
+
+fn process_logfile_and_csv(log_filename: &str, filename: &str, vmap_filename: &str) -> Result<(), Box<Error>> {
+    let vmap_path = Path::new(vmap_filename);
     let mut violation_map = HashMap::new();
     let path = Path::new(filename);
     let file = File::open(path)?;
@@ -112,11 +163,16 @@ fn process_logfile_and_csv(log_filename: &str, filename: &str) -> Result<(), Box
     if !logfile_path.exists() {
         create_empty_logfile(logfile_path, rdr.headers()?)?;
     }
-    process_logfile(logfile_path, &mut violation_map)?;
+    if vmap_path.exists() {
+        read_violation_map(&mut violation_map, vmap_path)?;
+    } else {
+        process_logfile(logfile_path, &mut violation_map)?;
+    }
     let logfile = std::fs::OpenOptions::new().write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
 
     process_csv(&mut rdr, path, &mut violation_map, Some(&mut logfile_writer))?;
+    write_violation_map(&mut violation_map, vmap_path)?;
 
     Ok(())
 }
@@ -132,7 +188,7 @@ fn main() {
 
     let filename = args.nth(1).unwrap();
 
-    if let Err(err) = process_logfile_and_csv("log.csv", &filename) {
+    if let Err(err) = process_logfile_and_csv("log.csv", &filename, "log.violation_map.dat") {
         println!("error: {}", err);
         process::exit(1);
     }
