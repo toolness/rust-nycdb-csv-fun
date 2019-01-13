@@ -8,41 +8,25 @@ extern crate byteorder;
 #[macro_use]
 extern crate serde_derive;
 
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+pub mod pk_map;
+
 use separator::Separatable;
 use pbr::{ProgressBar, Units};
-use blake2::{Blake2s, Digest};
-use std::collections::HashMap;
 use std::error::Error;
-use std::io::prelude::*;
 use std::env;
 use std::process;
 use std::fs::File;
 use std::path::Path;
+use pk_map::PkHashMap;
 
 const PRIMARY_KEY_INDEX: usize = 0;
 const ROW_REPORT_INTERVAL: usize = 100000;
-
-type PkHashMap = HashMap<u64, Vec<u8>>;
 
 #[derive(Serialize, Deserialize)]
 struct Revision {
     id: u64,
     byte_offset: u64,
     rows: u64
-}
-
-fn get_hash_size() -> usize {
-    let hasher = Blake2s::new();
-    hasher.result().len()
-}
-
-fn get_hash<'a, T: Iterator<Item = &'a str>>(iter: T) -> Vec<u8> {
-    let mut hasher = Blake2s::new();
-    for item in iter {
-        hasher.input(item);
-    }
-    Vec::from(hasher.result().as_slice())
 }
 
 fn create_empty_logfile(path: &Path, headers: &csv::StringRecord) -> Result<(), Box<Error>> {
@@ -73,7 +57,7 @@ fn process_csv<F>(
                 let record = result?;
                 let pk_str = record.get(PRIMARY_KEY_INDEX).unwrap();
                 let pk: u64 = pk_str.parse().unwrap();
-                let hash = get_hash(record.iter());
+                let hash = pk_map::get_hash(record.iter());
                 let is_changed = match pk_map.insert(pk, hash) {
                     Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
                         updates += 1;
@@ -116,60 +100,12 @@ fn process_logfile(path: &Path, pk_map: &mut PkHashMap) -> Result<(), Box<Error>
     Ok(())
 }
 
-fn read_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
-    let rawfile = File::open(path)?;
-    let mut file = std::io::BufReader::new(rawfile);
-    let u64_size = 8;
-    let hash_size = get_hash_size();
-    let entry_size = (u64_size + hash_size) as u64;
-    let mut entries = 0;
-    let total_entries = std::fs::metadata(path)?.len() / entry_size;
-    println!("Loading log cache with {} entries...", total_entries.separated_string());
-    let mut pb = ProgressBar::new(total_entries);
-    pb.show_counter = false;
-    pb.show_speed = false;
-    for _ in 0..total_entries {
-        let number = file.read_u64::<LittleEndian>()?;
-        let mut hash = vec![0; hash_size];
-        file.read_exact(&mut hash)?;
-        map.insert(number, hash);
-        entries += 1;
-        if entries % ROW_REPORT_INTERVAL == 0 {
-            pb.set(entries as u64);
-        }
-    }
-    pb.finish_println("");
-    Ok(())
-}
-
-fn write_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
-    let rawfile = File::create(path)?;
-    let mut file = std::io::BufWriter::new(rawfile);
-    let mut entries = 0;
-    let total_entries = map.len();
-    println!("Saving log cache with {} entries...", total_entries.separated_string());
-    let mut pb = ProgressBar::new(total_entries as u64);
-    pb.show_counter = false;
-    pb.show_speed = false;
-    for (key, value) in map.iter() {
-        file.write_u64::<LittleEndian>(*key)?;
-        file.write(value)?;
-        entries += 1;
-        if entries % ROW_REPORT_INTERVAL == 0 {
-            pb.set(entries as u64);
-        }
-    }
-    file.flush()?;
-    pb.finish_println("");
-    Ok(())
-}
-
 fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box<Error>> {
     let log_filename = format!("{}.csv", log_basename);
     let log_index_filename = format!("{}.index.csv", log_basename);
     let vmap_filename = format!("{}.cache.dat", log_basename);
     let vmap_path = Path::new(&vmap_filename);
-    let mut pk_map = HashMap::new();
+    let mut pk_map = pk_map::create_pk_map();
     let path = Path::new(filename);
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
@@ -180,7 +116,7 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     }
     let revision_byte_offset = std::fs::metadata(logfile_path)?.len();
     if vmap_path.exists() {
-        read_pk_map(&mut pk_map, vmap_path)?;
+        pk_map::read_pk_map(&mut pk_map, vmap_path)?;
     } else {
         process_logfile(logfile_path, &mut pk_map)?;
     }
@@ -199,7 +135,7 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
         let logfile_index_path = Path::new(&log_index_filename);
         logfile_writer.flush()?;
         let id = write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
-        write_pk_map(&mut pk_map, vmap_path)?;
+        pk_map::write_pk_map(&mut pk_map, vmap_path)?;
         println!("Wrote revision {}.", id);
     } else {
         println!("No changes found.");
