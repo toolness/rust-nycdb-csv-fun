@@ -1,3 +1,4 @@
+extern crate pbr;
 extern crate csv;
 extern crate blake2;
 extern crate separator;
@@ -5,6 +6,7 @@ extern crate byteorder;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use separator::Separatable;
+use pbr::{ProgressBar, Units};
 use blake2::{Blake2s, Digest};
 use std::collections::HashMap;
 use std::error::Error;
@@ -58,6 +60,8 @@ fn process_csv(
     let mut updates = 0;
     let mut my_logfile = logfile;
     println!("Processing {}...", path.display());
+    let mut pb = ProgressBar::new(total_bytes);
+    pb.set_units(Units::Bytes);
     loop {
         match record_iter.next() {
             Some(result) => {
@@ -84,9 +88,7 @@ fn process_csv(
                     }
                 }
                 if num_rows % ROW_REPORT_INTERVAL == 0 {
-                    let byte = record_iter.reader().position().byte();
-                    let pct: u32 = ((byte as f32 / total_bytes as f32) * 100.0) as u32;
-                    println!("{}% complete.", pct);
+                    pb.set(record_iter.reader().position().byte());
                 }
             }
             None => break
@@ -95,6 +97,7 @@ fn process_csv(
     if let Some(ref mut writer) = my_logfile {
         writer.flush()?;
     }
+    pb.finish_println("");
     println!("Finished processing {} records with {} additions and {} updates.",
              num_rows.separated_string(), additions.separated_string(), updates.separated_string());
     Ok(())
@@ -115,7 +118,10 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
     let entry_size = (u64_size + hash_size) as u64;
     let mut entries = 0;
     let total_entries = std::fs::metadata(path)?.len() / entry_size;
-    println!("Reading {} entries from {}...", total_entries, path.display());
+    println!("Reading {} entries from {}...", total_entries.separated_string(), path.display());
+    let mut pb = ProgressBar::new(total_entries);
+    pb.show_counter = false;
+    pb.show_speed = false;
     for _ in 0..total_entries {
         let number = file.read_u64::<LittleEndian>()?;
         let mut hash = vec![0; hash_size];
@@ -123,11 +129,10 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
         map.insert(number, hash);
         entries += 1;
         if entries % ROW_REPORT_INTERVAL == 0 {
-            let pct = ((entries as f32 / total_entries as f32) * 100.0) as u32;
-            println!("{}% complete.", pct);
+            pb.set(entries as u64);
         }
     }
-    println!("Done.");
+    pb.finish_println("");
     Ok(())
 }
 
@@ -136,18 +141,18 @@ fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Er
     let mut file = std::io::BufWriter::new(rawfile);
     let mut entries = 0;
     let total_entries = map.len();
-    println!("Writing {} entries to {}...", total_entries, path.display());
+    println!("Writing {} entries to {}...", total_entries.separated_string(), path.display());
+    let mut pb = ProgressBar::new(total_entries as u64);
     for (key, value) in map.iter() {
         file.write_u64::<LittleEndian>(*key)?;
         file.write(value)?;
         entries += 1;
         if entries % ROW_REPORT_INTERVAL == 0 {
-            let pct = ((entries as f32 / total_entries as f32) * 100.0) as u32;
-            println!("{}% complete.", pct);
+            pb.set(entries as u64);
         }
     }
     file.flush()?;
-    println!("Done.");
+    pb.finish_println("");
     Ok(())
 }
 
