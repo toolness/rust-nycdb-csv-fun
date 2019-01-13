@@ -23,7 +23,8 @@ const USAGE: &'static str = "
 Proof-of-concept CSV experiment for NYC-DB.
 
 Usage:
-  nycsv process <filename>
+  nycsv add <filename>
+  nycsv export <revision>
 
 Options:
   -h, --help    Show this screen.
@@ -35,8 +36,10 @@ const ROW_REPORT_INTERVAL: usize = 100000;
 
 #[derive(Deserialize)]
 struct Args {
-    arg_filename: Option<String>,
-    cmd_process: bool
+    arg_filename: String,
+    arg_revision: u64,
+    cmd_add: bool,
+    cmd_export: bool
 }
 
 #[derive(Serialize, Deserialize)]
@@ -117,17 +120,31 @@ fn process_logfile(path: &Path, pk_map: &mut PkHashMap) -> Result<(), Box<Error>
     Ok(())
 }
 
-fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box<Error>> {
-    let log_filename = format!("{}.csv", log_basename);
-    let log_index_filename = format!("{}.revisions.csv", log_basename);
-    let vmap_filename = format!("{}.cache.dat", log_basename);
+struct LogInfo {
+    basename: String,
+    filename: String,
+    index_filename: String
+}
+
+impl LogInfo {
+    fn new(basename: &str) -> Self {
+        LogInfo {
+            basename: String::from(basename),
+            filename: format!("{}.csv", basename),
+            index_filename: format!("{}.revisions.csv", basename)
+        }
+    }
+}
+
+fn process_logfile_and_csv(loginfo: &LogInfo, filename: &str) -> Result<(), Box<Error>> {
+    let vmap_filename = format!("{}.cache.dat", loginfo.basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut pk_map = pk_map::create_pk_map();
     let path = Path::new(filename);
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
 
-    let logfile_path = Path::new(&log_filename);
+    let logfile_path = Path::new(&loginfo.filename);
     if !logfile_path.exists() {
         create_empty_logfile(logfile_path, rdr.headers()?)?;
     }
@@ -149,7 +166,7 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     })?;
 
     if rows > 0 {
-        let logfile_index_path = Path::new(&log_index_filename);
+        let logfile_index_path = Path::new(&loginfo.index_filename);
         logfile_writer.flush()?;
         let id = write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
         pk_map::write_pk_map(&mut pk_map, vmap_path)?;
@@ -204,17 +221,59 @@ fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Res
     Ok(id)
 }
 
+fn export_revision(loginfo: &LogInfo, revision: u64) -> Result<(), Box<Error>> {
+    let logfile_index = File::open(&loginfo.index_filename)?;
+    let mut logfile_index_reader = csv::Reader::from_reader(logfile_index);
+
+    for index_result in logfile_index_reader.deserialize() {
+        let rev: Revision = index_result?;
+        if rev.id != revision {
+            continue;
+        }
+        let logfile = File::open(&loginfo.filename)?;
+        let mut logfile_reader = csv::Reader::from_reader(logfile);
+        let mut writer = csv::Writer::from_writer(std::io::stdout());
+        let mut pos = csv::Position::new();
+        let mut rows = 0;
+
+        writer.write_record(logfile_reader.headers()?)?;
+
+        pos.set_byte(rev.byte_offset);
+        logfile_reader.seek(pos).unwrap();
+        for result in logfile_reader.records() {
+            let record = result?;
+            writer.write_record(&record)?;
+            rows += 1;
+            if rows == rev.rows {
+                break;
+            }
+        }
+        return Ok(());
+    }
+
+    println!("Revision {} does not exist!", revision);
+    process::exit(1);
+}
+
+fn exit_on_error(result: Result<(), Box<Error>>) {
+    if let Err(err) = result {
+        println!("error: {}", err);
+        process::exit(1);
+    }
+}
+
 fn main() {
     let args: Args = docopt::Docopt::new(USAGE)
         .and_then(|d| d.deserialize())
         .unwrap_or_else(|e| e.exit());
 
-    if args.cmd_process {
-        let filename = args.arg_filename.unwrap();
+    let loginfo = LogInfo::new("log");
 
-        if let Err(err) = process_logfile_and_csv("log", &filename) {
-            println!("error: {}", err);
-            process::exit(1);
-        }
+    if args.cmd_add {
+        exit_on_error(process_logfile_and_csv(&loginfo, &args.arg_filename));
+    }
+
+    if args.cmd_export {
+        exit_on_error(export_revision(&loginfo, args.arg_revision));
     }
 }
