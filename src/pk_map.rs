@@ -6,6 +6,7 @@ use std::error::Error;
 use std::fs::{File, metadata};
 use std::io::{BufReader, BufWriter};
 use std::io::prelude::*;
+use std::time::Duration;
 use separator::Separatable;
 use pbr::ProgressBar;
 
@@ -28,6 +29,14 @@ pub fn create_pk_map() -> PkHashMap {
     HashMap::new()
 }
 
+fn build_pb(total: u64) -> ProgressBar<std::io::Stdout> {
+    let mut pb = ProgressBar::new(total);
+    pb.show_counter = false;
+    pb.show_speed = false;
+    pb.set_max_refresh_rate(Some(Duration::from_millis(100)));
+    pb
+}
+
 pub fn read_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
     let rawfile = File::open(path)?;
     let mut file = BufReader::new(rawfile);
@@ -36,9 +45,7 @@ pub fn read_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
     let entry_size = (u64_size + hash_size) as u64;
     let total_entries = metadata(path)?.len() / entry_size;
     println!("Loading log cache with {} entries...", total_entries.separated_string());
-    let mut pb = ProgressBar::new(total_entries);
-    pb.show_counter = false;
-    pb.show_speed = false;
+    let mut pb = build_pb(total_entries);
     for _ in 0..total_entries {
         let number = file.read_u64::<LittleEndian>()?;
         let mut hash = vec![0; hash_size];
@@ -55,9 +62,7 @@ pub fn write_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> 
     let mut file = BufWriter::new(rawfile);
     let total_entries = map.len();
     println!("Saving log cache with {} entries...", total_entries.separated_string());
-    let mut pb = ProgressBar::new(total_entries as u64);
-    pb.show_counter = false;
-    pb.show_speed = false;
+    let mut pb = build_pb(total_entries as u64);
     for (key, value) in map.iter() {
         file.write_u64::<LittleEndian>(*key)?;
         file.write(value)?;
