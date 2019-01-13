@@ -15,7 +15,7 @@ use pbr::{ProgressBar, Units};
 use std::error::Error;
 use std::env;
 use std::process;
-use std::fs::File;
+use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
 use pk_map::PkHashMap;
 
@@ -43,7 +43,7 @@ fn process_csv<F>(
     pk_map: &mut PkHashMap,
     on_change: &mut F
 ) -> Result<(), Box<Error>> where F: FnMut(&csv::StringRecord) -> Result<(), Box<Error>> {
-    let total_bytes = std::fs::metadata(path)?.len();
+    let total_bytes = metadata(path)?.len();
     let mut num_rows: usize = 0;
     let mut record_iter = rdr.records();
     let mut additions = 0;
@@ -114,13 +114,13 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     if !logfile_path.exists() {
         create_empty_logfile(logfile_path, rdr.headers()?)?;
     }
-    let revision_byte_offset = std::fs::metadata(logfile_path)?.len();
+    let revision_byte_offset = metadata(logfile_path)?.len();
     if vmap_path.exists() {
         pk_map::read_pk_map(&mut pk_map, vmap_path)?;
     } else {
         process_logfile(logfile_path, &mut pk_map)?;
     }
-    let logfile = std::fs::OpenOptions::new()
+    let logfile = OpenOptions::new()
         .write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
     let mut rows = 0;
@@ -173,7 +173,7 @@ fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Res
     }
 
     let id = get_latest_logfile_index_revision(path)? + 1;
-    let logfile_index = std::fs::OpenOptions::new()
+    let logfile_index = OpenOptions::new()
         .write(true).append(true).open(path)?;
     let mut logfile_index_writer = csv::WriterBuilder::new()
         .has_headers(false)
