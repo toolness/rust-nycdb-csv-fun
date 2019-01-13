@@ -150,14 +150,16 @@ fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Er
     Ok(())
 }
 
-fn process_logfile_and_csv(log_filename: &str, filename: &str, vmap_filename: &str) -> Result<(), Box<Error>> {
-    let vmap_path = Path::new(vmap_filename);
+fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box<Error>> {
+    let log_filename = format!("{}.csv", log_basename);
+    let vmap_filename = format!("{}.cache.dat", log_basename);
+    let vmap_path = Path::new(&vmap_filename);
     let mut violation_map = HashMap::new();
     let path = Path::new(filename);
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
 
-    let logfile_path = Path::new(log_filename);
+    let logfile_path = Path::new(&log_filename);
     if !logfile_path.exists() {
         create_empty_logfile(logfile_path, rdr.headers()?)?;
     }
@@ -190,7 +192,7 @@ fn main() {
 
     let filename = args.nth(1).unwrap();
 
-    if let Err(err) = process_logfile_and_csv("log.csv", &filename, "log.cache.dat") {
+    if let Err(err) = process_logfile_and_csv("log", &filename) {
         println!("error: {}", err);
         process::exit(1);
     }
