@@ -20,20 +20,16 @@ use std::process;
 use std::fs::File;
 use std::path::Path;
 
-const VIOLATION_ID_INDEX: usize = 0;
+const PRIMARY_KEY_INDEX: usize = 0;
 const ROW_REPORT_INTERVAL: usize = 100000;
 
-type ViolationMap = HashMap<u64, Vec<u8>>;
+type PkHashMap = HashMap<u64, Vec<u8>>;
 
 #[derive(Serialize, Deserialize)]
 struct Revision {
     id: u64,
     byte_offset: u64,
     rows: u64
-}
-
-fn validate_headers(headers: &csv::StringRecord) {
-    assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
 }
 
 fn get_hash_size() -> usize {
@@ -60,10 +56,9 @@ fn create_empty_logfile(path: &Path, headers: &csv::StringRecord) -> Result<(), 
 fn process_csv<F>(
     rdr: &mut csv::Reader<File>,
     path: &Path,
-    violation_map: &mut ViolationMap,
+    pk_map: &mut PkHashMap,
     on_change: &mut F
 ) -> Result<(), Box<Error>> where F: FnMut(&csv::StringRecord) -> Result<(), Box<Error>> {
-    validate_headers(rdr.headers()?);
     let total_bytes = std::fs::metadata(path)?.len();
     let mut num_rows: usize = 0;
     let mut record_iter = rdr.records();
@@ -76,11 +71,11 @@ fn process_csv<F>(
         match record_iter.next() {
             Some(result) => {
                 let record = result?;
-                let violation_id_str = record.get(VIOLATION_ID_INDEX).unwrap();
-                let violation_id: u64 = violation_id_str.parse().unwrap();
+                let pk_str = record.get(PRIMARY_KEY_INDEX).unwrap();
+                let pk: u64 = pk_str.parse().unwrap();
                 let hash = get_hash(record.iter());
-                let is_changed = match violation_map.insert(violation_id, hash) {
-                    Some(existing_hash) => if violation_map.get(&violation_id).unwrap() != &existing_hash {
+                let is_changed = match pk_map.insert(pk, hash) {
+                    Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
                         updates += 1;
                         true
                     } else {
@@ -114,14 +109,14 @@ fn process_csv<F>(
     Ok(())
 }
 
-fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), Box<Error>> {
+fn process_logfile(path: &Path, pk_map: &mut PkHashMap) -> Result<(), Box<Error>> {
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
-    process_csv(&mut rdr, path, violation_map, &mut |_| Ok(()))?;
+    process_csv(&mut rdr, path, pk_map, &mut |_| Ok(()))?;
     Ok(())
 }
 
-fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
+fn read_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
     let rawfile = File::open(path)?;
     let mut file = std::io::BufReader::new(rawfile);
     let u64_size = 8;
@@ -147,7 +142,7 @@ fn read_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Err
     Ok(())
 }
 
-fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Error>> {
+fn write_pk_map(map: &mut PkHashMap, path: &Path) -> Result<(), Box<Error>> {
     let rawfile = File::create(path)?;
     let mut file = std::io::BufWriter::new(rawfile);
     let mut entries = 0;
@@ -174,7 +169,7 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     let log_index_filename = format!("{}.index.csv", log_basename);
     let vmap_filename = format!("{}.cache.dat", log_basename);
     let vmap_path = Path::new(&vmap_filename);
-    let mut violation_map = HashMap::new();
+    let mut pk_map = HashMap::new();
     let path = Path::new(filename);
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
@@ -185,16 +180,16 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     }
     let revision_byte_offset = std::fs::metadata(logfile_path)?.len();
     if vmap_path.exists() {
-        read_violation_map(&mut violation_map, vmap_path)?;
+        read_pk_map(&mut pk_map, vmap_path)?;
     } else {
-        process_logfile(logfile_path, &mut violation_map)?;
+        process_logfile(logfile_path, &mut pk_map)?;
     }
     let logfile = std::fs::OpenOptions::new()
         .write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
     let mut rows = 0;
 
-    process_csv(&mut rdr, path, &mut violation_map, &mut |record| {
+    process_csv(&mut rdr, path, &mut pk_map, &mut |record| {
         rows += 1;
         logfile_writer.write_record(record)?;
         Ok(())
@@ -204,7 +199,7 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
         let logfile_index_path = Path::new(&log_index_filename);
         logfile_writer.flush()?;
         let id = write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
-        write_violation_map(&mut violation_map, vmap_path)?;
+        write_pk_map(&mut pk_map, vmap_path)?;
         println!("Wrote revision {}.", id);
     } else {
         println!("No changes found.");
