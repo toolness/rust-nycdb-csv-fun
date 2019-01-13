@@ -46,19 +46,18 @@ fn create_empty_logfile(path: &Path, headers: &csv::StringRecord) -> Result<(), 
     Ok(())
 }
 
-fn process_csv(
+fn process_csv<F>(
     rdr: &mut csv::Reader<File>,
     path: &Path,
     violation_map: &mut ViolationMap,
-    logfile: Option<&mut csv::Writer<File>>
-) -> Result<(), Box<Error>> {
+    on_change: &mut F
+) -> Result<(), Box<Error>> where F: FnMut(&csv::StringRecord) -> Result<(), Box<Error>> {
     validate_headers(rdr.headers()?);
     let total_bytes = std::fs::metadata(path)?.len();
     let mut num_rows: usize = 0;
     let mut record_iter = rdr.records();
     let mut additions = 0;
     let mut updates = 0;
-    let mut my_logfile = logfile;
     println!("Processing {}...", path.display());
     let mut pb = ProgressBar::new(total_bytes);
     pb.set_units(Units::Bytes);
@@ -83,9 +82,7 @@ fn process_csv(
                 };
                 num_rows += 1;
                 if is_changed {
-                    if let Some(ref mut writer) = my_logfile {
-                        writer.write_record(&record)?;
-                    }
+                    on_change(&record)?;
                 }
                 if num_rows % ROW_REPORT_INTERVAL == 0 {
                     pb.set(record_iter.reader().position().byte());
@@ -93,9 +90,6 @@ fn process_csv(
             }
             None => break
         }
-    }
-    if let Some(ref mut writer) = my_logfile {
-        writer.flush()?;
     }
     pb.finish_println("");
     println!("Finished processing {} records with {} additions and {} updates.",
@@ -106,7 +100,7 @@ fn process_csv(
 fn process_logfile(path: &Path, violation_map: &mut ViolationMap) -> Result<(), Box<Error>> {
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
-    process_csv(&mut rdr, path, violation_map, None)?;
+    process_csv(&mut rdr, path, violation_map, &mut |_| Ok(()))?;
     Ok(())
 }
 
@@ -175,7 +169,11 @@ fn process_logfile_and_csv(log_filename: &str, filename: &str, vmap_filename: &s
     let logfile = std::fs::OpenOptions::new().write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
 
-    process_csv(&mut rdr, path, &mut violation_map, Some(&mut logfile_writer))?;
+    process_csv(&mut rdr, path, &mut violation_map, &mut |record| {
+        logfile_writer.write_record(record)?;
+        Ok(())
+    })?;
+    logfile_writer.flush()?;
     write_violation_map(&mut violation_map, vmap_path)?;
 
     Ok(())
