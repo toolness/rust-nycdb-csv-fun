@@ -102,7 +102,7 @@ fn process_logfile(path: &Path, pk_map: &mut PkHashMap) -> Result<(), Box<Error>
 
 fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box<Error>> {
     let log_filename = format!("{}.csv", log_basename);
-    let log_index_filename = format!("{}.index.csv", log_basename);
+    let log_index_filename = format!("{}.revisions.csv", log_basename);
     let vmap_filename = format!("{}.cache.dat", log_basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut pk_map = pk_map::create_pk_map();
