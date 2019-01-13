@@ -1,8 +1,12 @@
+extern crate serde;
 extern crate pbr;
 extern crate csv;
 extern crate blake2;
 extern crate separator;
 extern crate byteorder;
+
+#[macro_use]
+extern crate serde_derive;
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use separator::Separatable;
@@ -20,6 +24,13 @@ const VIOLATION_ID_INDEX: usize = 0;
 const ROW_REPORT_INTERVAL: usize = 100000;
 
 type ViolationMap = HashMap<u64, Vec<u8>>;
+
+#[derive(Serialize, Deserialize)]
+struct Revision {
+    id: u64,
+    byte_offset: u64,
+    rows: u64
+}
 
 fn validate_headers(headers: &csv::StringRecord) {
     assert_eq!(headers.get(VIOLATION_ID_INDEX), Some("ViolationID"));
@@ -154,6 +165,7 @@ fn write_violation_map(map: &mut ViolationMap, path: &Path) -> Result<(), Box<Er
 
 fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box<Error>> {
     let log_filename = format!("{}.csv", log_basename);
+    let log_index_filename = format!("{}.index.csv", log_basename);
     let vmap_filename = format!("{}.cache.dat", log_basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut violation_map = HashMap::new();
@@ -165,22 +177,77 @@ fn process_logfile_and_csv(log_basename: &str, filename: &str) -> Result<(), Box
     if !logfile_path.exists() {
         create_empty_logfile(logfile_path, rdr.headers()?)?;
     }
+    let revision_byte_offset = std::fs::metadata(logfile_path)?.len();
     if vmap_path.exists() {
         read_violation_map(&mut violation_map, vmap_path)?;
     } else {
         process_logfile(logfile_path, &mut violation_map)?;
     }
-    let logfile = std::fs::OpenOptions::new().write(true).append(true).open(logfile_path)?;
+    let logfile = std::fs::OpenOptions::new()
+        .write(true).append(true).open(logfile_path)?;
     let mut logfile_writer = csv::Writer::from_writer(logfile);
+    let mut rows = 0;
 
     process_csv(&mut rdr, path, &mut violation_map, &mut |record| {
+        rows += 1;
         logfile_writer.write_record(record)?;
         Ok(())
     })?;
-    logfile_writer.flush()?;
-    write_violation_map(&mut violation_map, vmap_path)?;
+
+    if rows > 0 {
+        let logfile_index_path = Path::new(&log_index_filename);
+        logfile_writer.flush()?;
+        write_violation_map(&mut violation_map, vmap_path)?;
+        let id = write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
+        println!("Wrote revision {}.", id);
+    } else {
+        println!("No changes found.");
+    }
 
     Ok(())
+}
+
+fn create_empty_logfile_index(path: &Path) -> Result<(), Box<Error>> {
+    let logfile = File::create(path)?;
+    let mut writer = csv::Writer::from_writer(logfile);
+    writer.write_record(vec!["id", "byte_offset", "rows"])?;
+    writer.flush()?;
+    Ok(())
+}
+
+fn get_latest_logfile_index_revision(path: &Path) -> Result<u64, Box<Error>> {
+    let file = File::open(path)?;
+    let mut reader = csv::Reader::from_reader(file);
+    let mut latest = 0;
+
+    for result in reader.deserialize() {
+        let rev: Revision = result?;
+        if rev.id > latest {
+            latest = rev.id;
+        }
+    }
+
+    Ok(latest)
+}
+
+fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Result<u64, Box<Error>> {
+    if !path.exists() {
+        create_empty_logfile_index(path)?;
+    }
+
+    let id = get_latest_logfile_index_revision(path)? + 1;
+    let logfile_index = std::fs::OpenOptions::new()
+        .write(true).append(true).open(path)?;
+    let mut logfile_index_writer = csv::WriterBuilder::new()
+        .has_headers(false)
+        .from_writer(logfile_index);
+    logfile_index_writer.serialize(Revision {
+        id: id,
+        byte_offset: byte_offset,
+        rows: rows
+    })?;
+
+    Ok(id)
 }
 
 fn main() {
