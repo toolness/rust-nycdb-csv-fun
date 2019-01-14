@@ -1,6 +1,6 @@
 ## Motivation
 
-Updating [NYC-DB][] takes a long time because each massively large
+Updating [NYC-DB][] takes several hours because each massively large
 table must be rebuilt from scratch using source CSV files. This
 results in a lot of duplicate effort (and expensive CPU cycles)
 because most of the data already existed in the database.
