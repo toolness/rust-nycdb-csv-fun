@@ -13,7 +13,7 @@ mechanism to NYC-DB.
 
 An additional motivation is the simple fact that it's been about
 a year since I wrote anything in Rust. I'd heard [stories][]
-about how much faster Rust was at parsing plain-text files than
+about how much faster Rust was at parsing text files than
 languages like Ruby or Python, so I thought this project might
 be a nice fit, and a good excuse to play with Rust again.
 
@@ -80,7 +80,7 @@ The tool also maintains the following files:
 The following was run on an Intel i5-7600K running at 3.80 Mhz with a
 solid state drive.
 
-Adding an initial 2.3 GB CSV takes about 23 seconds:
+Adding an initial 2.3 GB CSV of [NYC's HPD Violations][] takes about 23 seconds:
 
 ```
 $ nycsv add hpd_violations-2019-01-11.csv
@@ -121,3 +121,4 @@ which is much easier to process than the original file.
 [NYC-DB]: https://github.com/aepyornis/nyc-db/
 [Rust]: https://www.rust-lang.org/
 [BLAKE2]: https://blake2.net/
+[NYC's HPD Violations]: https://data.cityofnewyork.us/Housing-Development/Housing-Maintenance-Code-Violations/wvxf-dwi5
