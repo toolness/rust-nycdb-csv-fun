@@ -41,7 +41,7 @@ Now make a minor edit to `hpd_violations.csv` and re-run the above command.
 It will create revision 2 of the data, reporting the number of rows that
 were added and/or updated.
 
-You can now export the changed data with:
+You can now export the changed data to stdout with:
 
 ```
 nycsv export 2
