@@ -17,6 +17,7 @@ use std::error::Error;
 use std::process;
 use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
+use std::time::SystemTime;
 use pk_map::PkHashMap;
 
 const USAGE: &'static str = "
@@ -137,6 +138,7 @@ impl LogInfo {
 }
 
 fn process_logfile_and_csv(loginfo: &LogInfo, filename: &str) -> Result<(), Box<Error>> {
+    let start_time = SystemTime::now();
     let vmap_filename = format!("{}.cache.dat", loginfo.basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut pk_map = pk_map::create_pk_map();
@@ -173,6 +175,11 @@ fn process_logfile_and_csv(loginfo: &LogInfo, filename: &str) -> Result<(), Box<
         println!("Wrote revision {}.", id);
     } else {
         println!("No changes found.");
+    }
+
+    let elapsed_secs = start_time.elapsed().unwrap().as_secs();
+    if elapsed_secs > 1 {
+        println!("Finished in {} seconds.", elapsed_secs);
     }
 
     Ok(())
