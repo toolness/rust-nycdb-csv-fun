@@ -84,8 +84,6 @@ Adding an initial 2.3 GB CSV of [NYC's HPD Violations][] takes about 23 seconds:
 
 ```
 $ nycsv add hpd_violations-2019-01-11.csv
-Processing log.csv...
-472 B / 472 B [=========================================] 100.00 % 17.18 MB/s
 Processing hpd_violations-2019-01-11.csv...
 2.23 GB / 2.23 GB [====================================] 100.00 % 102.49 MB/s
 Finished processing 5,104,859 records with 5,104,859 additions and 0 updates.
