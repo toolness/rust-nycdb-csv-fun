@@ -51,10 +51,10 @@ fn process_csv<F>(
     path: &str,
     pk_map: &mut PkHashMap,
     on_change: &mut F
-) -> Result<(), Box<Error>> where F: FnMut(&csv::StringRecord) -> Result<(), Box<Error>> {
+) -> Result<(), Box<Error>> where F: FnMut(&csv::ByteRecord) -> Result<(), Box<Error>> {
     let total_bytes = metadata(path)?.len();
     let mut num_rows: usize = 0;
-    let mut record_iter = rdr.records();
+    let mut record_iter = rdr.byte_records();
     let mut additions = 0;
     let mut updates = 0;
     println!("Processing {}...", path);
@@ -64,8 +64,8 @@ fn process_csv<F>(
         match record_iter.next() {
             Some(result) => {
                 let record = result?;
-                let pk_str = record.get(PRIMARY_KEY_INDEX).unwrap();
-                let pk: u64 = pk_str.parse().unwrap();
+                let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
+                let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
                 let hash = pk_map::get_hash(record.iter());
                 let is_changed = match pk_map.insert(pk, hash) {
                     Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
@@ -123,7 +123,7 @@ fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Bo
         process_logfile(&csvlog.filename, &mut pk_map)?;
     }
 
-    let mut rev_writer = csvlog.create_revision(rdr.headers()?)?;
+    let mut rev_writer = csvlog.create_revision(rdr.byte_headers()?)?;
 
     process_csv(&mut rdr, filename, &mut pk_map, &mut |record| {
         rev_writer.write(record)

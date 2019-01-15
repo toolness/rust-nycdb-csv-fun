@@ -17,7 +17,7 @@ pub type PkHashMap = HashMap<u64, Vec<u8>>;
 // https://tools.ietf.org/html/rfc7693
 const HASH_SIZE: usize = 20;
 
-pub fn get_hash<'a, T: Iterator<Item = &'a str>>(iter: T) -> Vec<u8> {
+pub fn get_hash<'a, T: Iterator<Item = &'a [u8]>>(iter: T) -> Vec<u8> {
     let mut hasher = VarBlake2b::new(HASH_SIZE).unwrap();
     for item in iter {
         hasher.input(item);

@@ -26,7 +26,7 @@ impl CsvLog {
         }
     }
 
-    fn create_empty_logfile(&mut self, headers: &csv::StringRecord) -> Result<(), Box<Error>> {
+    fn create_empty_logfile(&mut self, headers: &csv::ByteRecord) -> Result<(), Box<Error>> {
         let logfile = File::create(&self.filename)?;
         let mut writer = csv::Writer::from_writer(logfile);
         writer.write_record(headers)?;
@@ -34,7 +34,7 @@ impl CsvLog {
         Ok(())
     }
 
-    pub fn create_revision(&mut self, headers: &csv::StringRecord) -> Result<LogRevisionWriter, Box<Error>> {
+    pub fn create_revision(&mut self, headers: &csv::ByteRecord) -> Result<LogRevisionWriter, Box<Error>> {
         if !Path::new(&self.filename).exists() {
             self.create_empty_logfile(headers)?;
         }
@@ -98,7 +98,7 @@ impl LogRevisionWriter {
         })
     }
 
-    pub fn write(&mut self, record: &csv::StringRecord) -> Result<(), Box<Error>> {
+    pub fn write(&mut self, record: &csv::ByteRecord) -> Result<(), Box<Error>> {
         self.rev.rows += 1;
         self.logfile_writer.write_record(record)?;
         Ok(())
