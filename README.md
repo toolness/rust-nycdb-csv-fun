@@ -80,17 +80,17 @@ The tool also maintains the following files:
 The following was run on an Intel i5-7600K running at 3.80 Mhz with a
 solid state drive.
 
-Adding an initial 2.3 GB CSV of [NYC's HPD Violations][] takes about 23 seconds:
+Adding an initial 2.3 GB CSV of [NYC's HPD Violations][] takes about 22 seconds:
 
 ```
 $ nycsv add hpd_violations-2019-01-11.csv
 Processing hpd_violations-2019-01-11.csv...
-2.23 GB / 2.23 GB [====================================] 100.00 % 102.49 MB/s
+2.23 GB / 2.23 GB [====================================] 100.00 % 106.06 MB/s
 Finished processing 5,104,859 records with 5,104,859 additions and 0 updates.
 Saving log cache with 5,104,859 entries...
 [==================================================================] 100.00 %
 Wrote revision 1.
-Finished in 23 seconds.
+Finished in 22 seconds.
 ```
 
 This initial revision takes longer than subsequent ones because it needs
@@ -98,19 +98,19 @@ to write every single record it sees to the log file. Subsequent
 revisions will take less time, as most rows will have identical hashes.
 
 Adding a subsequent CSV that was published on the following day takes
-about 17 seconds:
+about 15 seconds:
 
 ```
 $ nycsv add hpd_violations-2019-01-12.csv
 Loading log cache with 5,104,859 entries...
 [==================================================================] 100.00 %
 Processing hpd_violations-2019-01-12.csv...
-2.23 GB / 2.23 GB [====================================] 100.00 % 156.57 MB/s
+2.23 GB / 2.23 GB [====================================] 100.00 % 177.82 MB/s
 Finished processing 5,106,615 records with 1,756 additions and 8,827 updates.
 Saving log cache with 5,106,615 entries...
 [==================================================================] 100.00 %
 Wrote revision 2.
-Finished in 17 seconds.
+Finished in 15 seconds.
 ```
 
 Running `nycsv export 2` yields a CSV that is less than 5 megabytes in size,
