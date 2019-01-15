@@ -40,6 +40,38 @@ impl LogInfo {
         }
         LogRevisionWriter::new(self.clone())
     }
+
+    pub fn export_revision<T: std::io::Write>(&self, revision: u64, writer: &mut csv::Writer<T>) -> Result<u64, Box<Error>> {
+        let logfile_index = File::open(&self.index_filename)?;
+        let mut logfile_index_reader = csv::Reader::from_reader(logfile_index);
+
+        for index_result in logfile_index_reader.deserialize() {
+            let rev: Revision = index_result?;
+            if rev.id != revision {
+                continue;
+            }
+            let logfile = File::open(&self.filename)?;
+            let mut logfile_reader = csv::Reader::from_reader(logfile);
+            let mut pos = csv::Position::new();
+            let mut rows = 0;
+
+            writer.write_record(logfile_reader.headers()?)?;
+
+            pos.set_byte(rev.byte_offset);
+            logfile_reader.seek(pos).unwrap();
+            for result in logfile_reader.records() {
+                let record = result?;
+                writer.write_record(&record)?;
+                rows += 1;
+                if rows == rev.rows {
+                    break;
+                }
+            }
+            return Ok(rows);
+        }
+
+        Ok(0)
+    }
 }
 
 pub struct LogRevisionWriter {
@@ -125,36 +157,4 @@ fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Res
     })?;
 
     Ok(id)
-}
-
-pub fn export_revision<T: std::io::Write>(loginfo: &LogInfo, revision: u64, writer: &mut csv::Writer<T>) -> Result<u64, Box<Error>> {
-    let logfile_index = File::open(&loginfo.index_filename)?;
-    let mut logfile_index_reader = csv::Reader::from_reader(logfile_index);
-
-    for index_result in logfile_index_reader.deserialize() {
-        let rev: Revision = index_result?;
-        if rev.id != revision {
-            continue;
-        }
-        let logfile = File::open(&loginfo.filename)?;
-        let mut logfile_reader = csv::Reader::from_reader(logfile);
-        let mut pos = csv::Position::new();
-        let mut rows = 0;
-
-        writer.write_record(logfile_reader.headers()?)?;
-
-        pos.set_byte(rev.byte_offset);
-        logfile_reader.seek(pos).unwrap();
-        for result in logfile_reader.records() {
-            let record = result?;
-            writer.write_record(&record)?;
-            rows += 1;
-            if rows == rev.rows {
-                break;
-            }
-        }
-        return Ok(rows);
-    }
-
-    Ok(0)
 }

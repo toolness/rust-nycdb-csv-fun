@@ -146,7 +146,7 @@ fn process_logfile_and_csv(loginfo: &mut LogInfo, filename: &str) -> Result<(), 
 
 fn export_revision(loginfo: &LogInfo, revision: u64) -> Result<(), Box<Error>> {
     let mut writer = csv::Writer::from_writer(std::io::stdout());
-    let rows_written = log::export_revision(loginfo, revision, &mut writer)?;
+    let rows_written = loginfo.export_revision(revision, &mut writer)?;
     if rows_written == 0 {
         println!("Revision {} does not exist!", revision);
         process::exit(1);
