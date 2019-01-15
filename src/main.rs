@@ -16,7 +16,7 @@ use separator::Separatable;
 use pbr::{ProgressBar, Units};
 use std::error::Error;
 use std::process;
-use std::fs::{File, metadata, OpenOptions};
+use std::fs::{File, metadata};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -48,7 +48,7 @@ struct Args {
 
 fn process_csv<F>(
     rdr: &mut csv::Reader<File>,
-    path: &Path,
+    path: &str,
     pk_map: &mut PkHashMap,
     on_change: &mut F
 ) -> Result<(), Box<Error>> where F: FnMut(&csv::StringRecord) -> Result<(), Box<Error>> {
@@ -57,7 +57,7 @@ fn process_csv<F>(
     let mut record_iter = rdr.records();
     let mut additions = 0;
     let mut updates = 0;
-    println!("Processing {}...", path.display());
+    println!("Processing {}...", path);
     let mut pb = ProgressBar::new(total_bytes);
     pb.set_units(Units::Bytes);
     loop {
@@ -102,49 +102,36 @@ fn process_csv<F>(
     Ok(())
 }
 
-fn process_logfile(path: &Path, pk_map: &mut PkHashMap) -> Result<(), Box<Error>> {
+fn process_logfile(path: &str, pk_map: &mut PkHashMap) -> Result<(), Box<Error>> {
     let file = File::open(path)?;
     let mut rdr = csv::Reader::from_reader(file);
     process_csv(&mut rdr, path, pk_map, &mut |_| Ok(()))?;
     Ok(())
 }
 
-fn process_logfile_and_csv(loginfo: &LogInfo, filename: &str) -> Result<(), Box<Error>> {
+fn process_logfile_and_csv(loginfo: &mut LogInfo, filename: &str) -> Result<(), Box<Error>> {
     let start_time = SystemTime::now();
     let vmap_filename = format!("{}.cache.dat", loginfo.basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut pk_map = pk_map::create_pk_map();
-    let path = Path::new(filename);
-    let file = File::open(path)?;
+    let file = File::open(filename)?;
     let mut rdr = csv::Reader::from_reader(file);
 
-    let logfile_path = Path::new(&loginfo.filename);
-    if !logfile_path.exists() {
-        log::create_empty_logfile(logfile_path, rdr.headers()?)?;
-    }
-    let revision_byte_offset = metadata(logfile_path)?.len();
     if vmap_path.exists() {
         pk_map::read_pk_map(&mut pk_map, vmap_path)?;
-    } else {
-        process_logfile(logfile_path, &mut pk_map)?;
+    } else if Path::new(&loginfo.filename).exists() {
+        process_logfile(&loginfo.filename, &mut pk_map)?;
     }
-    let logfile = OpenOptions::new()
-        .write(true).append(true).open(logfile_path)?;
-    let mut logfile_writer = csv::Writer::from_writer(logfile);
-    let mut rows = 0;
 
-    process_csv(&mut rdr, path, &mut pk_map, &mut |record| {
-        rows += 1;
-        logfile_writer.write_record(record)?;
-        Ok(())
+    let mut rev_writer = loginfo.create_revision(rdr.headers()?)?;
+
+    process_csv(&mut rdr, filename, &mut pk_map, &mut |record| {
+        rev_writer.write(record)
     })?;
 
-    if rows > 0 {
-        let logfile_index_path = Path::new(&loginfo.index_filename);
-        logfile_writer.flush()?;
-        let id = log::write_logfile_index_revision(logfile_index_path, revision_byte_offset, rows)?;
+    if let Some(rev) = rev_writer.complete()? {
         pk_map::write_pk_map(&mut pk_map, vmap_path)?;
-        println!("Wrote revision {}.", id);
+        println!("Wrote revision {}.", rev.id);
     } else {
         println!("No changes found.");
     }
@@ -180,10 +167,10 @@ fn main() {
         .and_then(|d| d.deserialize())
         .unwrap_or_else(|e| e.exit());
 
-    let loginfo = LogInfo::new("log");
+    let mut loginfo = LogInfo::new("log");
 
     if args.cmd_add {
-        exit_on_error(process_logfile_and_csv(&loginfo, &args.arg_filename));
+        exit_on_error(process_logfile_and_csv(&mut loginfo, &args.arg_filename));
     }
 
     if args.cmd_export {

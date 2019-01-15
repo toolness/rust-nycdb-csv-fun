@@ -1,23 +1,16 @@
-use std::fs::{File, OpenOptions};
+use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
 use std::error::Error;
 
 
 #[derive(Serialize, Deserialize)]
-struct Revision {
-    id: u64,
-    byte_offset: u64,
-    rows: u64
+pub struct Revision {
+    pub id: u64,
+    pub byte_offset: u64,
+    pub rows: u64
 }
 
-pub fn create_empty_logfile(path: &Path, headers: &csv::StringRecord) -> Result<(), Box<Error>> {
-    let logfile = File::create(path)?;
-    let mut writer = csv::Writer::from_writer(logfile);
-    writer.write_record(headers)?;
-    writer.flush()?;
-    Ok(())
-}
-
+#[derive(Clone)]
 pub struct LogInfo {
     pub basename: String,
     pub filename: String,
@@ -31,6 +24,63 @@ impl LogInfo {
             filename: format!("{}.csv", basename),
             index_filename: format!("{}.revisions.csv", basename)
         }
+    }
+
+    fn create_empty_logfile(&mut self, headers: &csv::StringRecord) -> Result<(), Box<Error>> {
+        let logfile = File::create(&self.filename)?;
+        let mut writer = csv::Writer::from_writer(logfile);
+        writer.write_record(headers)?;
+        writer.flush()?;
+        Ok(())
+    }
+
+    pub fn create_revision(&mut self, headers: &csv::StringRecord) -> Result<LogRevisionWriter, Box<Error>> {
+        if !Path::new(&self.filename).exists() {
+            self.create_empty_logfile(headers)?;
+        }
+        LogRevisionWriter::new(self.clone())
+    }
+}
+
+pub struct LogRevisionWriter {
+    info: LogInfo,
+    rev: Revision,
+    logfile_writer: csv::Writer<File>
+}
+
+impl LogRevisionWriter {
+    fn new(info: LogInfo) -> Result<Self, Box<Error>> {
+        let byte_offset = metadata(&info.filename)?.len();
+        let logfile = OpenOptions::new()
+            .write(true).append(true).open(&info.filename)?;
+        let logfile_writer = csv::Writer::from_writer(logfile);
+
+        Ok(LogRevisionWriter {
+            info,
+            rev: Revision {
+                id: 0,
+                byte_offset,
+                rows: 0
+            },
+            logfile_writer
+        })
+    }
+
+    pub fn write(&mut self, record: &csv::StringRecord) -> Result<(), Box<Error>> {
+        self.rev.rows += 1;
+        self.logfile_writer.write_record(record)?;
+        Ok(())
+    }
+
+    pub fn complete(mut self) -> Result<Option<Revision>, Box<Error>> {
+        if self.rev.rows == 0 {
+            return Ok(None);
+        }
+        let logfile_index_path = Path::new(&self.info.index_filename);
+        self.logfile_writer.flush()?;
+        let id = write_logfile_index_revision(logfile_index_path, self.rev.byte_offset, self.rev.rows)?;
+        self.rev.id = id;
+        Ok(Some(self.rev))
     }
 }
 
@@ -57,7 +107,7 @@ pub fn get_latest_logfile_index_revision(path: &Path) -> Result<u64, Box<Error>>
     Ok(latest)
 }
 
-pub fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Result<u64, Box<Error>> {
+fn write_logfile_index_revision(path: &Path, byte_offset: u64, rows: u64) -> Result<u64, Box<Error>> {
     if !path.exists() {
         create_empty_logfile_index(path)?;
     }
