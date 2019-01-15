@@ -84,7 +84,7 @@ impl LogRevisionWriter {
     }
 }
 
-pub fn create_empty_logfile_index(path: &Path) -> Result<(), Box<Error>> {
+fn create_empty_logfile_index(path: &Path) -> Result<(), Box<Error>> {
     let logfile = File::create(path)?;
     let mut writer = csv::Writer::from_writer(logfile);
     writer.write_record(vec!["id", "byte_offset", "rows"])?;
@@ -92,7 +92,7 @@ pub fn create_empty_logfile_index(path: &Path) -> Result<(), Box<Error>> {
     Ok(())
 }
 
-pub fn get_latest_logfile_index_revision(path: &Path) -> Result<u64, Box<Error>> {
+fn get_latest_logfile_index_revision(path: &Path) -> Result<u64, Box<Error>> {
     let file = File::open(path)?;
     let mut reader = csv::Reader::from_reader(file);
     let mut latest = 0;
