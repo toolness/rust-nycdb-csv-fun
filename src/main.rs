@@ -54,40 +54,34 @@ fn process_csv<F>(
 ) -> Result<(), Box<Error>> where F: FnMut(&csv::ByteRecord) -> Result<(), Box<Error>> {
     let total_bytes = metadata(path)?.len();
     let mut num_rows: usize = 0;
-    let mut record_iter = rdr.byte_records();
     let mut additions = 0;
     let mut updates = 0;
     println!("Processing {}...", path);
     let mut pb = ProgressBar::new(total_bytes);
     pb.set_units(Units::Bytes);
-    loop {
-        match record_iter.next() {
-            Some(result) => {
-                let record = result?;
-                let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
-                let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
-                let hash = pk_map::get_hash(record.iter());
-                let is_changed = match pk_map.insert(pk, hash) {
-                    Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
-                        updates += 1;
-                        true
-                    } else {
-                        false
-                    },
-                    None => {
-                        additions += 1;
-                        true
-                    }
-                };
-                num_rows += 1;
-                if is_changed {
-                    on_change(&record)?;
-                }
-                if num_rows % ROW_REPORT_INTERVAL == 0 {
-                    pb.set(record_iter.reader().position().byte());
-                }
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
+        let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
+        let hash = pk_map::get_hash(record.iter());
+        let is_changed = match pk_map.insert(pk, hash) {
+            Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
+                updates += 1;
+                true
+            } else {
+                false
+            },
+            None => {
+                additions += 1;
+                true
             }
-            None => break
+        };
+        num_rows += 1;
+        if is_changed {
+            on_change(&record)?;
+        }
+        if num_rows % ROW_REPORT_INTERVAL == 0 {
+            pb.set(rdr.position().byte());
         }
     }
     pb.finish_println("");
