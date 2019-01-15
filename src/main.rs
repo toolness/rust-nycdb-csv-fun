@@ -21,7 +21,7 @@ use std::path::Path;
 use std::time::SystemTime;
 
 use pk_map::PkHashMap;
-use log::LogInfo;
+use log::CsvLog;
 
 const USAGE: &'static str = "
 Proof-of-concept CSV experiment for NYC-DB.
@@ -109,9 +109,9 @@ fn process_logfile(path: &str, pk_map: &mut PkHashMap) -> Result<(), Box<Error>>
     Ok(())
 }
 
-fn process_logfile_and_csv(loginfo: &mut LogInfo, filename: &str) -> Result<(), Box<Error>> {
+fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Box<Error>> {
     let start_time = SystemTime::now();
-    let vmap_filename = format!("{}.cache.dat", loginfo.basename);
+    let vmap_filename = format!("{}.cache.dat", csvlog.basename);
     let vmap_path = Path::new(&vmap_filename);
     let mut pk_map = pk_map::create_pk_map();
     let file = File::open(filename)?;
@@ -119,11 +119,11 @@ fn process_logfile_and_csv(loginfo: &mut LogInfo, filename: &str) -> Result<(), 
 
     if vmap_path.exists() {
         pk_map::read_pk_map(&mut pk_map, vmap_path)?;
-    } else if Path::new(&loginfo.filename).exists() {
-        process_logfile(&loginfo.filename, &mut pk_map)?;
+    } else if Path::new(&csvlog.filename).exists() {
+        process_logfile(&csvlog.filename, &mut pk_map)?;
     }
 
-    let mut rev_writer = loginfo.create_revision(rdr.headers()?)?;
+    let mut rev_writer = csvlog.create_revision(rdr.headers()?)?;
 
     process_csv(&mut rdr, filename, &mut pk_map, &mut |record| {
         rev_writer.write(record)
@@ -144,9 +144,9 @@ fn process_logfile_and_csv(loginfo: &mut LogInfo, filename: &str) -> Result<(), 
     Ok(())
 }
 
-fn export_revision(loginfo: &LogInfo, revision: u64) -> Result<(), Box<Error>> {
+fn export_revision(csvlog: &CsvLog, revision: u64) -> Result<(), Box<Error>> {
     let mut writer = csv::Writer::from_writer(std::io::stdout());
-    let rows_written = loginfo.export_revision(revision, &mut writer)?;
+    let rows_written = csvlog.export_revision(revision, &mut writer)?;
     if rows_written == 0 {
         println!("Revision {} does not exist!", revision);
         process::exit(1);
@@ -167,13 +167,13 @@ fn main() {
         .and_then(|d| d.deserialize())
         .unwrap_or_else(|e| e.exit());
 
-    let mut loginfo = LogInfo::new("log");
+    let mut csvlog = CsvLog::new("log");
 
     if args.cmd_add {
-        exit_on_error(process_logfile_and_csv(&mut loginfo, &args.arg_filename));
+        exit_on_error(process_logfile_and_csv(&mut csvlog, &args.arg_filename));
     }
 
     if args.cmd_export {
-        exit_on_error(export_revision(&loginfo, args.arg_revision));
+        exit_on_error(export_revision(&csvlog, args.arg_revision));
     }
 }

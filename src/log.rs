@@ -11,15 +11,15 @@ pub struct Revision {
 }
 
 #[derive(Clone)]
-pub struct LogInfo {
+pub struct CsvLog {
     pub basename: String,
     pub filename: String,
     pub index_filename: String
 }
 
-impl LogInfo {
+impl CsvLog {
     pub fn new(basename: &str) -> Self {
-        LogInfo {
+        CsvLog {
             basename: String::from(basename),
             filename: format!("{}.csv", basename),
             index_filename: format!("{}.revisions.csv", basename)
@@ -75,13 +75,13 @@ impl LogInfo {
 }
 
 pub struct LogRevisionWriter {
-    info: LogInfo,
+    info: CsvLog,
     rev: Revision,
     logfile_writer: csv::Writer<File>
 }
 
 impl LogRevisionWriter {
-    fn new(info: LogInfo) -> Result<Self, Box<Error>> {
+    fn new(info: CsvLog) -> Result<Self, Box<Error>> {
         let byte_offset = metadata(&info.filename)?.len();
         let logfile = OpenOptions::new()
             .write(true).append(true).open(&info.filename)?;
