@@ -1,5 +1,4 @@
-use blake2::VarBlake2b;
-use blake2::digest::{Input, VariableOutput};
+use md5::{Md5, Digest};
 use std::collections::HashMap;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::path::Path;
@@ -11,9 +10,7 @@ use std::time::Duration;
 use separator::Separatable;
 use pbr::ProgressBar;
 
-// We're effectively using id-blake2b160. For more details, see:
-// https://tools.ietf.org/html/rfc7693
-const HASH_SIZE: usize = 20;
+const HASH_SIZE: usize = 16;
 
 pub enum UpdateType {
     Added,
@@ -30,32 +27,24 @@ fn build_progress_bar(total: u64) -> ProgressBar<std::io::Stdout> {
 
 pub struct PkHashMap {
     map: HashMap<u64, Vec<u8>>,
-    temp_hash: Vec<u8>
+    temp_hash: Md5
 }
 
 impl PkHashMap {
     pub fn new() -> Self {
         PkHashMap {
             map: HashMap::new(),
-            temp_hash: Vec::with_capacity(HASH_SIZE)
+            temp_hash: Md5::new()
         }
-    }
-
-    fn fill_temp_hash<'a, T: Iterator<Item = &'a [u8]>>(&mut self, iter: T) {
-        let mut hasher = VarBlake2b::new(HASH_SIZE).unwrap();
-        for item in iter {
-            hasher.input(item);
-        }
-        self.temp_hash.clear();
-        hasher.variable_result(|res| {
-            self.temp_hash.extend_from_slice(res);
-        });
     }
 
     pub fn update<'a, T: Iterator<Item = &'a [u8]>>(&mut self, pk: u64, iter_to_hash: T) -> Option<UpdateType> {
-        self.fill_temp_hash(iter_to_hash);
+        for item in iter_to_hash {
+            self.temp_hash.input(item);
+        }
+        let hash = self.temp_hash.result_reset();
         let result = if let Some(existing_hash) = self.map.get(&pk) {
-            if &self.temp_hash == existing_hash {
+            if hash.as_slice() == existing_hash.as_slice() {
                 None
             } else {
                 Some(UpdateType::Changed)
@@ -64,7 +53,7 @@ impl PkHashMap {
             Some(UpdateType::Added)
         };
         if result.is_some() {
-            self.map.insert(pk, self.temp_hash.clone());
+            self.map.insert(pk, Vec::from(hash.as_slice()));
         }
         result
     }

@@ -1,7 +1,7 @@
 extern crate serde;
 extern crate pbr;
 extern crate csv;
-extern crate blake2;
+extern crate md5;
 extern crate separator;
 extern crate byteorder;
 extern crate docopt;
