@@ -42,6 +42,11 @@ impl PkHashMap {
     }
 
     fn fill_temp_hash<'a, T: Iterator<Item = &'a [u8]>>(&mut self, iter: T) {
+        // Note that it'd be nice to be able to have this hasher be part
+        // of the struct so that we wouldn't have to re-allocate it every
+        // call, but this doesn't seem to be possible with the variable
+        // hasher interface, since getting the result always consumes the
+        // hasher.
         let mut hasher = VarBlake2b::new(HASH_SIZE).unwrap();
         for item in iter {
             hasher.input(item);
