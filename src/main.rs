@@ -67,14 +67,16 @@ fn process_csv<F>(
         pk_map::get_hash(record.iter(), &mut hash);
         let result = pk_map::update(pk_map, pk, &hash);
         match result {
-            pk_map::UpdateResult::Added => { additions += 1; },
-            pk_map::UpdateResult::Changed => { updates += 1; },
-            pk_map::UpdateResult::Unchanged => {}
+            Some(update) => {
+                match update {
+                    pk_map::UpdateType::Added => { additions += 1; },
+                    pk_map::UpdateType::Changed => { updates += 1; }
+                }
+                on_change(&record)?;
+            },
+            None => {}
         }
         num_rows += 1;
-        if result.has_been_modified() {
-            on_change(&record)?;
-        }
         if num_rows % ROW_REPORT_INTERVAL == 0 {
             pb.set(rdr.position().byte());
         }

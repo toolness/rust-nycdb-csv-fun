@@ -32,33 +32,22 @@ pub fn create_pk_map() -> PkHashMap {
     HashMap::new()
 }
 
-pub enum UpdateResult {
+pub enum UpdateType {
     Added,
-    Changed,
-    Unchanged
+    Changed
 }
 
-impl UpdateResult {
-    pub fn has_been_modified(&self) -> bool {
-        match self {
-            UpdateResult::Added => true,
-            UpdateResult::Changed => true,
-            UpdateResult::Unchanged => false
-        }
-    }
-}
-
-pub fn update(map: &mut PkHashMap, pk: u64, hash: &Vec<u8>) -> UpdateResult {
+pub fn update(map: &mut PkHashMap, pk: u64, hash: &Vec<u8>) -> Option<UpdateType> {
     let result = if let Some(existing_hash) = map.get(&pk) {
         if hash == existing_hash {
-            UpdateResult::Unchanged
+            None
         } else {
-            UpdateResult::Changed
+            Some(UpdateType::Changed)
         }
     } else {
-        UpdateResult::Added
+        Some(UpdateType::Added)
     };
-    if result.has_been_modified() {
+    if result.is_some() {
         map.insert(pk, hash.clone());
     }
     result
