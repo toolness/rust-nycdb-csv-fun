@@ -59,13 +59,11 @@ fn process_csv<F>(
     println!("Processing {}...", path);
     let mut pb = ProgressBar::new(total_bytes);
     pb.set_units(Units::Bytes);
-    let mut hash = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
         let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
-        pk_map::get_hash(record.iter(), &mut hash);
-        let result = pk_map::update(pk_map, pk, &hash);
+        let result = pk_map.update(pk, record.iter());
         match result {
             Some(update) => {
                 match update {
@@ -104,12 +102,12 @@ fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Bo
     let start_time = SystemTime::now();
     let vmap_filename = format!("{}.cache.dat", csvlog.basename);
     let vmap_path = Path::new(&vmap_filename);
-    let mut pk_map = pk_map::create_pk_map();
+    let mut pk_map = PkHashMap::new();
     let file = File::open(filename)?;
     let mut rdr = csv::Reader::from_reader(file);
 
     if vmap_path.exists() {
-        pk_map::read_pk_map(&mut pk_map, vmap_path)?;
+        pk_map.deserialize(vmap_path)?;
     } else if Path::new(&csvlog.filename).exists() {
         process_logfile(&csvlog.filename, &mut pk_map)?;
     }
@@ -121,7 +119,7 @@ fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Bo
     })?;
 
     if let Some(rev) = rev_writer.complete()? {
-        pk_map::write_pk_map(&mut pk_map, vmap_path)?;
+        pk_map.serialize(vmap_path)?;
         println!("Wrote revision {}.", rev.id);
     } else {
         println!("No changes found.");
