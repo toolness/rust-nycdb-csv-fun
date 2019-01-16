@@ -59,25 +59,20 @@ fn process_csv<F>(
     println!("Processing {}...", path);
     let mut pb = ProgressBar::new(total_bytes);
     pb.set_units(Units::Bytes);
+    let mut hash = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
         let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
-        let hash = pk_map::get_hash(record.iter());
-        let is_changed = match pk_map.insert(pk, hash) {
-            Some(existing_hash) => if pk_map.get(&pk).unwrap() != &existing_hash {
-                updates += 1;
-                true
-            } else {
-                false
-            },
-            None => {
-                additions += 1;
-                true
-            }
-        };
+        pk_map::get_hash(record.iter(), &mut hash);
+        let result = pk_map::update(pk_map, pk, &hash);
+        match result {
+            pk_map::UpdateResult::Added => { additions += 1; },
+            pk_map::UpdateResult::Changed => { updates += 1; },
+            pk_map::UpdateResult::Unchanged => {}
+        }
         num_rows += 1;
-        if is_changed {
+        if result.has_been_modified() {
             on_change(&record)?;
         }
         if num_rows % ROW_REPORT_INTERVAL == 0 {

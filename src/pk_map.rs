@@ -17,20 +17,51 @@ pub type PkHashMap = HashMap<u64, Vec<u8>>;
 // https://tools.ietf.org/html/rfc7693
 const HASH_SIZE: usize = 20;
 
-pub fn get_hash<'a, T: Iterator<Item = &'a [u8]>>(iter: T) -> Vec<u8> {
+pub fn get_hash<'a, T: Iterator<Item = &'a [u8]>>(iter: T, output: &mut Vec<u8>) {
     let mut hasher = VarBlake2b::new(HASH_SIZE).unwrap();
     for item in iter {
         hasher.input(item);
     }
-    let mut result = Vec::with_capacity(HASH_SIZE);
+    output.clear();
     hasher.variable_result(|res| {
-        result.extend_from_slice(res);
+        output.extend_from_slice(res);
     });
-    result
 }
 
 pub fn create_pk_map() -> PkHashMap {
     HashMap::new()
+}
+
+pub enum UpdateResult {
+    Added,
+    Changed,
+    Unchanged
+}
+
+impl UpdateResult {
+    pub fn has_been_modified(&self) -> bool {
+        match self {
+            UpdateResult::Added => true,
+            UpdateResult::Changed => true,
+            UpdateResult::Unchanged => false
+        }
+    }
+}
+
+pub fn update(map: &mut PkHashMap, pk: u64, hash: &Vec<u8>) -> UpdateResult {
+    let result = if let Some(existing_hash) = map.get(&pk) {
+        if hash == existing_hash {
+            UpdateResult::Unchanged
+        } else {
+            UpdateResult::Changed
+        }
+    } else {
+        UpdateResult::Added
+    };
+    if result.has_been_modified() {
+        map.insert(pk, hash.clone());
+    }
+    result
 }
 
 fn build_pb(total: u64) -> ProgressBar<std::io::Stdout> {
