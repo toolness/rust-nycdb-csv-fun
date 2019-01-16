@@ -47,6 +47,9 @@ You can now export the changed data to stdout with:
 nycsv export 2
 ```
 
+The schema of the export is the same as the schema of the
+`log.csv` file, which is described below.
+
 ## How it works
 
 The prototype assumes that each CSV has rows that can be uniquely
