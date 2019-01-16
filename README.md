@@ -71,9 +71,7 @@ The tool also maintains the following files:
   by revision number, recording the byte offset each revision
   starts at, and how many rows it consists of.
 
-* `log.cache.dat` is a serialization of the hash map. It can
-  actually be deleted: if it's not found, the entire log will
-  be replayed to rebuild it.
+* `log.pkmap.dat` is a serialization of the hash map.
 
 ## Performance
 

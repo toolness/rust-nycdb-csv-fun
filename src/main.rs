@@ -93,25 +93,16 @@ fn process_csv<F>(
     Ok(())
 }
 
-fn process_logfile(path: &str, pk_map: &mut PkHashMap) -> Result<(), Box<Error>> {
-    let file = File::open(path)?;
-    let mut rdr = csv::Reader::from_reader(file);
-    process_csv(&mut rdr, path, pk_map, &mut |_, _| Ok(()))?;
-    Ok(())
-}
-
-fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Box<Error>> {
+fn process_csv_and_update_log(csvlog: &mut CsvLog, filename: &str) -> Result<(), Box<Error>> {
     let start_time = SystemTime::now();
-    let vmap_filename = format!("{}.cache.dat", csvlog.basename);
-    let vmap_path = Path::new(&vmap_filename);
+    let pkmap_filename = format!("{}.pkmap.dat", csvlog.basename);
+    let pkmap_path = Path::new(&pkmap_filename);
     let mut pk_map = PkHashMap::new();
     let file = File::open(filename)?;
     let mut rdr = csv::Reader::from_reader(file);
 
-    if vmap_path.exists() {
-        pk_map.deserialize(vmap_path)?;
-    } else if Path::new(&csvlog.filename).exists() {
-        process_logfile(&csvlog.filename, &mut pk_map)?;
+    if pkmap_path.exists() {
+        pk_map.deserialize(pkmap_path)?;
     }
 
     let mut rev_writer = csvlog.create_revision(rdr.byte_headers()?)?;
@@ -121,7 +112,7 @@ fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Bo
     })?;
 
     if let Some(rev) = rev_writer.complete()? {
-        pk_map.serialize(vmap_path)?;
+        pk_map.serialize(pkmap_path)?;
         println!("Wrote revision {}.", rev.id);
     } else {
         println!("No changes found.");
@@ -161,7 +152,7 @@ fn main() {
     let mut csvlog = CsvLog::new("log");
 
     if args.cmd_add {
-        exit_on_error(process_logfile_and_csv(&mut csvlog, &args.arg_filename));
+        exit_on_error(process_csv_and_update_log(&mut csvlog, &args.arg_filename));
     }
 
     if args.cmd_export {
