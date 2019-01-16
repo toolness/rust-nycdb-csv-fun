@@ -2,6 +2,7 @@ use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
 use std::error::Error;
 
+use update_type::UpdateType;
 
 #[derive(Serialize, Deserialize)]
 pub struct Revision {
@@ -29,7 +30,12 @@ impl CsvLog {
     fn create_empty_logfile(&mut self, headers: &csv::ByteRecord) -> Result<(), Box<Error>> {
         let logfile = File::create(&self.filename)?;
         let mut writer = csv::Writer::from_writer(logfile);
-        writer.write_record(headers)?;
+        let mut full_headers = csv::ByteRecord::new();
+        for header in headers.iter() {
+            full_headers.push_field(header);
+        }
+        full_headers.push_field("LogUpdateType".as_bytes());
+        writer.write_record(&full_headers)?;
         writer.flush()?;
         Ok(())
     }
@@ -98,9 +104,10 @@ impl LogRevisionWriter {
         })
     }
 
-    pub fn write(&mut self, record: &csv::ByteRecord) -> Result<(), Box<Error>> {
+    pub fn write(&mut self, utype: &UpdateType, record: &mut csv::ByteRecord) -> Result<(), Box<Error>> {
         self.rev.rows += 1;
-        self.logfile_writer.write_record(record)?;
+        record.push_field(utype.as_str().as_bytes());
+        self.logfile_writer.write_record(record as &csv::ByteRecord)?;
         Ok(())
     }
 

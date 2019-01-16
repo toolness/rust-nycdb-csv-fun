@@ -11,6 +11,7 @@ extern crate serde_derive;
 
 pub mod pk_map;
 pub mod log;
+pub mod update_type;
 
 use separator::Separatable;
 use pbr::{ProgressBar, Units};
@@ -20,6 +21,7 @@ use std::fs::{File, metadata};
 use std::path::Path;
 use std::time::SystemTime;
 
+use update_type::UpdateType;
 use pk_map::PkHashMap;
 use log::CsvLog;
 
@@ -51,7 +53,7 @@ fn process_csv<F>(
     path: &str,
     pk_map: &mut PkHashMap,
     on_change: &mut F
-) -> Result<(), Box<Error>> where F: FnMut(&csv::ByteRecord) -> Result<(), Box<Error>> {
+) -> Result<(), Box<Error>> where F: FnMut(&UpdateType, &mut csv::ByteRecord) -> Result<(), Box<Error>> {
     let total_bytes = metadata(path)?.len();
     let mut num_rows: usize = 0;
     let mut additions = 0;
@@ -61,16 +63,16 @@ fn process_csv<F>(
     pb.set_units(Units::Bytes);
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let pk_bytes = record.get(PRIMARY_KEY_INDEX).unwrap();
-        let pk: u64 = std::str::from_utf8(pk_bytes).unwrap().parse().unwrap();
+        let pk: u64 = std::str::from_utf8(record.get(PRIMARY_KEY_INDEX).unwrap())
+            .unwrap().parse().unwrap();
         let result = pk_map.update(pk, record.iter());
         match result {
             Some(update) => {
                 match update {
-                    pk_map::UpdateType::Added => { additions += 1; },
-                    pk_map::UpdateType::Changed => { updates += 1; }
+                    UpdateType::Add => { additions += 1; },
+                    UpdateType::Change => { updates += 1; }
                 }
-                on_change(&record)?;
+                on_change(&update, &mut record)?;
             },
             None => {}
         }
@@ -91,35 +93,26 @@ fn process_csv<F>(
     Ok(())
 }
 
-fn process_logfile(path: &str, pk_map: &mut PkHashMap) -> Result<(), Box<Error>> {
-    let file = File::open(path)?;
-    let mut rdr = csv::Reader::from_reader(file);
-    process_csv(&mut rdr, path, pk_map, &mut |_| Ok(()))?;
-    Ok(())
-}
-
-fn process_logfile_and_csv(csvlog: &mut CsvLog, filename: &str) -> Result<(), Box<Error>> {
+fn process_csv_and_update_log(csvlog: &mut CsvLog, filename: &str) -> Result<(), Box<Error>> {
     let start_time = SystemTime::now();
-    let vmap_filename = format!("{}.cache.dat", csvlog.basename);
-    let vmap_path = Path::new(&vmap_filename);
+    let pkmap_filename = format!("{}.pkmap.dat", csvlog.basename);
+    let pkmap_path = Path::new(&pkmap_filename);
     let mut pk_map = PkHashMap::new();
     let file = File::open(filename)?;
     let mut rdr = csv::Reader::from_reader(file);
 
-    if vmap_path.exists() {
-        pk_map.deserialize(vmap_path)?;
-    } else if Path::new(&csvlog.filename).exists() {
-        process_logfile(&csvlog.filename, &mut pk_map)?;
+    if pkmap_path.exists() {
+        pk_map.deserialize(pkmap_path)?;
     }
 
     let mut rev_writer = csvlog.create_revision(rdr.byte_headers()?)?;
 
-    process_csv(&mut rdr, filename, &mut pk_map, &mut |record| {
-        rev_writer.write(record)
+    process_csv(&mut rdr, filename, &mut pk_map, &mut |update_type, record| {
+        rev_writer.write(update_type, record)
     })?;
 
     if let Some(rev) = rev_writer.complete()? {
-        pk_map.serialize(vmap_path)?;
+        pk_map.serialize(pkmap_path)?;
         println!("Wrote revision {}.", rev.id);
     } else {
         println!("No changes found.");
@@ -159,7 +152,7 @@ fn main() {
     let mut csvlog = CsvLog::new("log");
 
     if args.cmd_add {
-        exit_on_error(process_logfile_and_csv(&mut csvlog, &args.arg_filename));
+        exit_on_error(process_csv_and_update_log(&mut csvlog, &args.arg_filename));
     }
 
     if args.cmd_export {

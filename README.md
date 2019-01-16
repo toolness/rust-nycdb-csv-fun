@@ -47,6 +47,9 @@ You can now export the changed data to stdout with:
 nycsv export 2
 ```
 
+The schema of the export is the same as the schema of the
+`log.csv` file, which is described below.
+
 ## How it works
 
 The prototype assumes that each CSV has rows that can be uniquely
@@ -67,13 +70,16 @@ The tool also maintains the following files:
   all revisions. This means that it contains duplicate rows for
   anything that changed between revisions.
 
+  Each row has the same schema as the original CSV file, except
+  with an additional column at the very end called
+  `LogUpdateType`: its value can be `A` to indicate that
+  the row was added, or `C` to indicate that the row was changed.
+
 * `log.revisions.csv` is essentially an index into `log.csv`
   by revision number, recording the byte offset each revision
   starts at, and how many rows it consists of.
 
-* `log.cache.dat` is a serialization of the hash map. It can
-  actually be deleted: if it's not found, the entire log will
-  be replayed to rebuild it.
+* `log.pkmap.dat` is a serialization of the hash map.
 
 ## Performance
 
