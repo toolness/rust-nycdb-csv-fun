@@ -67,6 +67,11 @@ The tool also maintains the following files:
   all revisions. This means that it contains duplicate rows for
   anything that changed between revisions.
 
+  Each row has the same schema as the original CSV file, except
+  with an additional column at the very end called
+  `LogUpdateType`: its value can be `A` to indicate that
+  the row was added, or `C` to indicate that the row was changed.
+
 * `log.revisions.csv` is essentially an index into `log.csv`
   by revision number, recording the byte offset each revision
   starts at, and how many rows it consists of.
