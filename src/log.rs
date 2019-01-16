@@ -2,6 +2,7 @@ use std::fs::{File, metadata, OpenOptions};
 use std::path::Path;
 use std::error::Error;
 
+use update_type::UpdateType;
 
 #[derive(Serialize, Deserialize)]
 pub struct Revision {
@@ -98,9 +99,9 @@ impl LogRevisionWriter {
         })
     }
 
-    pub fn write(&mut self, record: &csv::ByteRecord) -> Result<(), Box<Error>> {
+    pub fn write(&mut self, _utype: &UpdateType, record: &mut csv::ByteRecord) -> Result<(), Box<Error>> {
         self.rev.rows += 1;
-        self.logfile_writer.write_record(record)?;
+        self.logfile_writer.write_record(record as &csv::ByteRecord)?;
         Ok(())
     }
 

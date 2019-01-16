@@ -11,14 +11,12 @@ use std::time::Duration;
 use separator::Separatable;
 use pbr::ProgressBar;
 
+use update_type::UpdateType;
+
 // We're effectively using id-blake2b160. For more details, see:
 // https://tools.ietf.org/html/rfc7693
 const HASH_SIZE: usize = 20;
 
-pub enum UpdateType {
-    Added,
-    Changed
-}
 
 fn build_progress_bar(total: u64) -> ProgressBar<std::io::Stdout> {
     let mut pb = ProgressBar::new(total);
@@ -63,10 +61,10 @@ impl PkHashMap {
             if &self.temp_hash == existing_hash {
                 None
             } else {
-                Some(UpdateType::Changed)
+                Some(UpdateType::Change)
             }
         } else {
-            Some(UpdateType::Added)
+            Some(UpdateType::Add)
         };
         if result.is_some() {
             self.map.insert(pk, self.temp_hash.clone());
